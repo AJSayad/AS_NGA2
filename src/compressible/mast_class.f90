@@ -58,7 +58,7 @@ module mast_class
       character(len=str_medium) :: name='UNNAMED_MAST'    !< Solver name (default=UNNAMED_MAST)
 
       ! Solver parameters
-      real(WP) :: shs_wt=4.0_WP                           !< Shock sensor weight (higher value --> more sensitive)
+      real(WP) :: shs_wt=8.0_WP !AS optimized for shock droplet !< Shock sensor weight (higher value --> more sensitive)
 
       ! Constant fluid properties
       real(WP) :: contact_angle                           !< This is our static contact angle
@@ -1186,7 +1186,7 @@ contains
      integer :: VF_check,shock_check,n_band,ni,nj,nk
      integer :: i,j,k
 
-     n_band = 1 !ceiling(max_CFL)
+     n_band = 5 !AS optimized for shock droplet !ceiling(max_CFL)
 
      this%sl_x = 0; this%sl_y = 0; this%sl_z = 0
      ! 1 is for semi-Lagrangian, 0 is for centered scheme
