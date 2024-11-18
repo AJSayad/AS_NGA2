@@ -1,0 +1,58 @@
+# Parallelization
+Partition : 1 1 1
+
+# Mesh definition
+Lx :	4.0
+nx :	4000  
+Ly :	0.1
+ny :	1
+
+# gas-liquid interface
+Gas Phase Spread: 10
+Gas Phase Spread Center: 2000 # center of cell spread
+
+# Liquid properties and IC
+Liquid density : 1000 # Lrho0
+Liquid pressure : -3e7 # LP0
+Liquid Pref : 3.43e8
+Liquid initial velocity : 0.0 # Lu0 x direction
+Liquid gamma : 6.12
+Liquid dynamic viscosity :    0
+Surface tension coefficient : 0 #0.0757 # sigma
+Liquid thermal conductivity : 0.0
+Liquid specific heat (constant vol): 4130.2
+
+# Gas properties and IC
+Gas density : 1 # Grho0
+Gas pressure : 1.28e9 #for 4,000 points 1.28e8 for 400 points #1.28e6 # GP0
+Gas initial velocity : 0.0 #Gu0 x direction
+Gas gamma : 1.4
+Gas dynamic viscosity : 0
+Gas thermal conductivity : 0.0
+Gas specific heat (constant vol): 717.6
+
+# Time integration
+Max timestep size : 1.5e-8
+Max cfl number :    0.5
+Max time :     	    1e-3
+# To look at breakup, use tmax = 2.9e-3
+Max steps :	   100000
+
+# Pressure solver
+Pressure tolerance : 1e-6
+Pressure iteration : 100
+
+# Implicit velocity solver
+Implicit tolerance : 1e-6
+Implicit iteration : 100
+
+# Ensight output
+Ensight output period : 2e-5 # 50 output files
+
+
+
+#AS left in from shock droplet example 
+# Flow setup
+Droplet diameter :   0.0
+Droplet location :   0.00 0 0
+Shock location :      0.0

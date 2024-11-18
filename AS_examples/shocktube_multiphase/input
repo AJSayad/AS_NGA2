@@ -1,0 +1,61 @@
+# Parallelization
+Partition :	1 1 1
+
+# Mesh definition
+Lx :	1.5
+nx :	200 #1000 #1000 #200
+Ly :	7.5e-3 #1.5e-3
+ny :	1
+
+# gas-liquid interface
+Interface location : 1.2 # interface_loc #shifted to avoid hitting left boundary
+
+# Liquid properties and IC
+Liquid density : 1000 # Lrho0
+Liquid pressure : 1e9 # LP0
+Liquid Pref : 3.43e8
+Liquid initial velocity : 0.0 # Lu0 x direction
+Liquid gamma : 6.12
+Liquid dynamic viscosity :    0
+Surface tension coefficient : 0 # sigma
+Liquid thermal conductivity : 0
+Liquid specific heat (constant vol): 4130.2
+
+# Gas properties and IC
+Gas density : 20 # Grho0
+Gas pressure : 1e5 # GP0
+Gas initial velocity : 0.0 #Gu0 x direction
+Gas gamma : 1.4
+Gas dynamic viscosity : 0
+Gas thermal conductivity :    0
+Gas specific heat (constant vol): 717.6
+
+# Time integration
+Max timestep size : 1.25e-9 #2.5e-7 #1.25e-6
+Max cfl number :    0.5
+Max time :     	    3e-4
+# To look at breakup, use tmax = 2.9e-3
+Max steps :	    100000 #30
+
+# Pressure solver
+Pressure tolerance : 1e-6
+Pressure iteration : 100
+
+# Implicit velocity solver
+Implicit tolerance : 1e-6
+Implicit iteration : 100
+
+# Ensight output
+Ensight output period : 6e-6 # 50 output files
+
+
+
+
+
+# Flow setup
+Droplet diameter :   0.00
+Droplet location :   0.0 0 0
+
+
+
+
