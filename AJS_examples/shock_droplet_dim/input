@@ -1,0 +1,56 @@
+# Parallelization
+Partition :	8 1 1
+
+# Mesh definition
+Lx :	0.1
+nx :	250 #512
+nx stretch: 40
+Ly :	0.1
+ny :	250 #512
+<!-- Lz :    12 -->
+<!-- nz :    96  -->
+<!-- Cells per diameter :	  16 -->
+Cells per left region:	  16
+Refined region left bdy:  4.17
+Refined region right bdy: 6
+Refined region top bdy:	  1
+
+# Flow setup
+Droplet diameter :   0.008
+Droplet location :   0.055 0 0
+Shock location :      0.04
+Mach number of shock :   10 
+Pre-shock density :   1.2 
+Pre-shock pressure :  1.e5 
+
+Liquid dynamic viscosity :    0
+Gas dynamic viscosity :       0
+Liquid thermal conductivity : 0
+Liquid specific heat (constant vol): 4130.2 
+Gas thermal conductivity :    0
+Gas specific heat (constant vol): 717.6
+Liquid gamma :	      	    6.12
+Liquid Pref :		    3.43e8
+Gas gamma : 		      1.4
+
+Liquid density :              1000 
+Surface tension coefficient : 0 #0.0757
+
+# Time integration
+Max timestep size : 1e-6
+Max cfl number :    0.8
+Max time :     	    175
+# To look at breakup, use tmax = 2.9e-3
+Max steps :	    1000000
+
+# Pressure solver
+Pressure tolerance : 1e-6
+Pressure iteration : 100
+
+# Implicit velocity solver
+Implicit tolerance : 1e-6
+Implicit iteration : 100
+
+# Ensight output
+Ensight output period : 1e-6 #1e-10
+Ensight smesh output period: 1e-8
