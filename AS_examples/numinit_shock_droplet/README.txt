@@ -1,0 +1,1 @@
+Numerically initialized shock droplet simulation. This runs a 1D shocktube simluation, extracts the shock profile and saves it to files with .dat extensions, and then runs a 2D multiphase simulation where the numerical shock profile is used to initialize the shock. 

@@ -1,0 +1,63 @@
+# Parallelization
+Partition : 1 1 1
+
+# Mesh definition
+Lx :	0.1
+nx :	100 #500
+nx stretch: 25 #number of points to add at the end of domain for stretching
+Ly :	0.1
+ny :	100 #500 # number of cells in the uniform region
+ny stretch : 20 # number of cells to add for stretching (i.e. ny_total = 2*ny_stretch + ny)
+
+Profile extraction flag: false
+n_shock : 10 #shock profile points (left and right of center)
+
+<!-- Lz :    12 -->
+<!-- nz :    96  -->
+<!-- Cells per diameter :	  16 -->
+Cells per left region:	  16
+Refined region left bdy:  4.17
+Refined region right bdy: 6
+Refined region top bdy:	  1
+
+# Flow setup
+Droplet diameter :   0.0048
+Droplet location :   0.07 0 0
+Shock location :    0.02
+Single phase shock location: 0.01
+Final shock location : 0.05 #singlephase simulation final shock location
+Mach number of shock :   1.47 
+Pre-shock density :   1.204 
+Pre-shock pressure :  1.01325e5 
+
+#AS added Fluid properties
+Liquid dynamic viscosity :    0
+Gas dynamic viscosity :       0
+Liquid thermal conductivity : 0
+Gas thermal conductivity :    0
+Liquid gamma :	      	     6.12
+Liquid Pref :		     3.43e8
+Gas gamma : 		      1.4
+
+#AS added
+Liquid density :              1000 
+Surface tension coefficient : 0.0757
+
+# Time integration
+Max timestep size : 1e-6
+Multiphase max timestep size: 1e-6 #@REPLACE@
+Max cfl number :    0.5
+Max time :     	    5.23e-4
+# To look at breakup, use tmax = 2.9e-3
+Max steps :	  1000000
+
+# Pressure solver
+Pressure tolerance : 1e-6
+Pressure iteration : 100
+
+# Implicit velocity solver
+Implicit tolerance : 1e-6
+Implicit iteration : 100
+
+# Ensight output
+Ensight output period : 1e-6
