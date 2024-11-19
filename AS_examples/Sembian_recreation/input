@@ -1,0 +1,70 @@
+# Parallelization
+Partition : 18 1 1
+
+# Mesh definition
+Lx :	0.250 # 250mm from Sembian phys. of fluids 2016
+Lx stretch: 0.0 # where to start stretching (geometry.f90 set up to stretch the left side of domain)
+nx :	1136 # for 100 cpd #5682 #for 500cpd
+nx stretch: 50 # number of cells to stretch the left side of domain by
+Ly :	0.037 # 37mm from Sembian phys. of fluids 2016
+ny :	168 # for 100cpd #842 #for 500cpd
+<!-- Lz :    12 -->
+<!-- nz :    96  -->
+<!-- Cells per diameter :	  16 -->
+Cells per left region:	  16
+Refined region left bdy:  4.17
+Refined region right bdy: 6
+Refined region top bdy:	  1
+
+# walls setup
+wall left: true
+wall right: true
+wall top: true
+wall bottom: true
+
+# high pressure region
+Exploding wire left: 0.0015 # left of high pressure region
+Exploding wire right: 0.0025 # right of high pressure region
+
+# Flow setup
+Droplet diameter :   0.022
+Droplet location :   0.0478 0 0 # 0.0368 + 0.011
+Shock location :      0.03
+Mach number of shock :   10 
+Pre-shock density :   1.17 # from Sembian phys. of fluids 2016
+Pre-shock pressure :  1.01e5 # from Sembian phys. of fluids 2016
+
+Post-shock density :  580.7 # from Sembian phys. of fluids 2016
+Post-shock pressure : 5e8 # 500 bar from Sembian phys. of fluids 2016
+
+Liquid dynamic viscosity :    0
+Gas dynamic viscosity :       0
+Liquid thermal conductivity : 0
+Liquid specific heat (constant vol): 4130.2 
+Gas thermal conductivity :    0
+Gas specific heat (constant vol): 717.6
+Liquid gamma :	      	    6.12
+Liquid Pref :		    3.43e8
+Gas gamma : 		      1.4
+
+Liquid density :              1000 
+Surface tension coefficient : 0 #0.0757
+
+# Time integration
+Max timestep size : 9.5e-8 # 1.9e-8
+Max cfl number :    0.5
+Max time :     	    1e-3
+# To look at breakup, use tmax = 2.9e-3
+Max steps :	    1000000
+
+# Pressure solver
+Pressure tolerance : 1e-6
+Pressure iteration : 100
+
+# Implicit velocity solver
+Implicit tolerance : 1e-6
+Implicit iteration : 100
+
+# Ensight output
+Ensight output period : 1e-6
+Ensight smesh output period: 1e-6
