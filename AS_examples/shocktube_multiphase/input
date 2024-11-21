@@ -48,14 +48,3 @@ Implicit iteration : 100
 # Ensight output
 Ensight output period : 6e-6 # 50 output files
 
-
-
-
-
-# Flow setup
-Droplet diameter :   0.00
-Droplet location :   0.0 0 0
-
-
-
-

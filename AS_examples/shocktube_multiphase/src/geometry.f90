@@ -46,8 +46,8 @@ contains
            call param_read('Lz',Lz)
          end if
          ! Read in droplet information
-         call param_read('Droplet diameter',ddrop)
-         call param_read('Droplet location',dctr)
+         !call param_read('Droplet diameter',ddrop)
+         !call param_read('Droplet location',dctr)
 
          if (param_exists('Cells per diameter')) then
            ! Stretched grid
