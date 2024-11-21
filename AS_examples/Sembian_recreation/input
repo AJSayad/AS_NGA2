@@ -20,7 +20,7 @@ Refined region top bdy:	  1
 wall left: true
 wall right: true
 wall top: true
-wall bottom: true
+wall bottom: false
 
 # high pressure region
 Exploding wire left: 0.0015 # left of high pressure region
