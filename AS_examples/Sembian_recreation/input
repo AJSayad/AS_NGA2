@@ -28,7 +28,7 @@ Exploding wire right: 0.0025 # right of high pressure region
 
 # Flow setup
 Droplet diameter :   0.022
-Droplet location :   0.0478 0 0 # 0.0368 + 0.011
+Droplet location :   0.2 0 0 
 Shock location :      0.03
 Mach number of shock :   10 
 Pre-shock density :   1.17 # from Sembian phys. of fluids 2016
