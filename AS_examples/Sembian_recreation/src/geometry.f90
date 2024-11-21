@@ -275,15 +275,15 @@ contains
             x(:) = x_full(:)
             deallocate(temp_x,x_full)
             
-            !do j=1,ny+1
-            !  y(j) = real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
-            !end do
-
-            do j = 1, ny+1
-               y(j) = real(j-1,WP)*dy
-               !   print*, 'j value is: ', j
-               !   print*, 'y(j) is: ', y(j)
+            do j=1,ny+1
+              y(j) = real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
             end do
+
+            !do j = 1, ny+1
+            !   y(j) = real(j-1,WP)*dy
+            !   !   print*, 'j value is: ', j
+            !   !   print*, 'y(j) is: ', y(j)
+            !end do
 
             if (amRoot) then
                print*, '==== MESH DESCRIPTIN IN x ===='
@@ -307,7 +307,7 @@ contains
          end do
           
          ! General serial grid object
-         grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.true.,name='ShockDrop')
+         grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='ShockDrop')
 
       end block create_grid
 
