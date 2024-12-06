@@ -397,10 +397,8 @@ contains
                      fs%Ui(j,:,:) = Ui_profile(q)
                      q = q + 1
                      if (q.eq.(2*n_shock))then
-                        if(amRoot)then
-                           print*, "Finished reading in shock profile. Numeber of points: ",q
-                           exit
-                        end if
+                        print*, "Finished reading in shock profile. Numeber of points: ",q
+                        exit
                      end if
                   end do
                end if
