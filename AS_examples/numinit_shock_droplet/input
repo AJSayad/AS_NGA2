@@ -1,12 +1,14 @@
 # Parallelization
-Partition : 11 2 1
+Partition : 4 1 1
 
 # Mesh definition
-Lx :	0.17
-nx :	1932
-nx stretch: 25 #number of points to add at the end of domain for stretching
-Ly :	0.14
-ny :	1592 # number of cells in the uniform region ###note: keep ny even for uniform mesh###
+Lx :	0.17 # end of the refined region
+Lx ref: 0.0 # start of the refined uniform region in x direction
+nx :	242 #483
+nx stretch right: 25 #number of points to add at the right of domain for stretching
+nx stretch left: 25 #number of points to add at the left of domain for stretching
+Ly :	0.17
+ny :	242 #484 # number of cells in the uniform region
 ny stretch : 30 # number of cells to add for stretching (i.e. ny_total = 2*ny_stretch + ny)
 
 Profile extraction flag: false
@@ -16,13 +18,13 @@ n_shock : 10 #shock profile points (left and right of center)
 <!-- nz :    96  -->
 
 # Flow setup
-Droplet diameter :   0.022
-Droplet location :   0.08 0 0
-Shock location :    0.067
-Single phase shock location: 0.01
-Final shock location : 0.03 #singlephase simulation final shock location
-Mach number of shock :   2.4 
-Pre-shock density :   1.204 
+Droplet diameter :  0.022
+Droplet location :   0.09 0 0
+Shock location :    0.04
+Single phase shock location: 0.02
+Final shock location : 0.04 #singlephase simulation final shock location
+Mach number of shock :   2.4
+Pre-shock density :   1.204
 Pre-shock pressure :  1.01325e5
 
 #AS added Fluid properties
@@ -30,19 +32,19 @@ Liquid dynamic viscosity :    0
 Gas dynamic viscosity :       0
 Liquid thermal conductivity : 0
 Gas thermal conductivity :    0
-Liquid specific heat (constant vol): 4130.2 
 Gas specific heat (constant vol): 717.6
 Liquid gamma :	      	     6.12
 Liquid Pref :		     3.43e8
+Liquid specific heat (constant vol): 4130.2
 Gas gamma : 		      1.4
 
 #AS added
-Liquid density :              1000 
-Surface tension coefficient : 0 
+Liquid density :              1000
+Surface tension coefficient : 0
 
 # Time integration
-Max timestep size : 1.567e-8
-Multiphase max timestep size: 1.56700E-08
+Max timestep size : 3.82e-7
+Multiphase max timestep size: 3.82000E-07
 Max cfl number :    0.5
 Max time :     	    1e-4
 # To look at breakup, use tmax = 2.9e-3

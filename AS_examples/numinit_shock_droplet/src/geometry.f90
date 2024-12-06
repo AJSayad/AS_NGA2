@@ -25,26 +25,31 @@ contains
          use sgrid_class, only: cartesian
          integer :: i,j,k,nx,ny,nz
          real(WP) :: ddrop, dx
-         real(WP), dimension(3) :: dctr
          !real(WP) :: Lcalc,r,rold,err,tol
          real(WP) :: Lx,Ly,Lz
          real(WP), dimension(:), allocatable :: x,y,z
 
          !AS variables for stretching in x
-         integer :: nx_stretching
-         real(WP) :: dx_new, stretching
+         integer ::  nx_stretchL,nx_stretchR
+         real(WP) :: dx_old,alpha,dx_ref,start_ref
 
          !AS variables for stretching in y
          real(WP) :: y_box1,dy,dy_old,dy_stretch,Ly_ref
-         integer :: ny_stretch
+         integer ::  ny_stretch
          
          !AS variable for shock profile extraction
          logical :: extract_flag !AS
 
          call param_read('Profile extraction flag',extract_flag) !AS
          ! Read in grid definition
-         call param_read('Lx',Lx); call param_read('nx',nx); call param_read('nx stretch',nx_stretching); allocate(x(nx+nx_stretching+1)) !AS allocates x to be 1 larger than the extended nx
+         call param_read('Lx',Lx); call param_read('Lx ref', start_ref, default=0.0_WP);
+         !print *, "START REF: ",start_ref
+         call param_read('nx',nx); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
+
+         allocate(x(nx+nx_stretchL+nx_stretchR+1));
+
          dx = Lx/nx
+         dx_ref = (Lx - start_ref)/real(nx,WP)
 
          !AS if profile is being extracted, run the simulation in 1D
          if (extract_flag.eqv.(.true.)) then
@@ -65,20 +70,23 @@ contains
         
          ! Read in droplet information
          call param_read('Droplet diameter',ddrop)
-         call param_read('Droplet location',dctr)
-
-            !!!AS MESH GENERATION !!!
          
-            !AS mesh in x
-            stretching=1.1_WP
-            do i=1,nx+1
-               x(i) = real(i-1,WP)*dx
+            !AS uniform mesh region
+            alpha=1.05_WP
+            do i=nx_stretchL+1,nx+nx_stretchL+1
+               x(i) = start_ref + real(i-1-nx_stretchL,WP)*dx_ref
             end do
 
-            !AS stretching in x
-            do i=nx+2, nx+1+nx_stretching
-               dx_new = (x(i-1)-x(i-2))*stretching !change in cell size, this is the distance
-               x(i) = x(i-1)+dx_new !location of new point, this is the distance plus the distance from the previously defined point
+            ! stretch left of domain
+            do i=nx_stretchL,1,-1
+               dx_old = abs(x(i+2) - x(i+1))
+               x(i) = x(i+1) - dx_old*alpha
+            end do
+
+            ! stretch right of domain
+            do i=nx+nx_stretchL+2,nx+nx_stretchL+nx_stretchR+1
+               dx_old = x(i-1)-x(i-2)
+               x(i) = x(i-1)+dx_old*alpha !location of new point, this is the distance plus the distance from the previously defined point
                !for a uniform mesh it would be x(i) = x(i-1)+dx
             end do
 
@@ -106,7 +114,7 @@ contains
                !stretching in y
                do j=ny+ny_stretch+2,ny+(2*ny_stretch)+1
                   dy_old = y(j-2) - y(j-3)
-                  dy_stretch = stretching*dy_old
+                  dy_stretch = alpha*dy_old
                   y(j) = y(j-1) + dy_stretch
                end do
 
@@ -121,13 +129,20 @@ contains
                z(k) = real(k-1,WP)/real(nz,WP)*Lz-0.5_WP*Lz
             end do
 
-            if(amROOT)then
+            if(amRoot)then
                print*, "======== MESH DESCRIPTION IN x ========"
+               print*, "Uniform region length: ", Lx
                print*, "Number of cells in the uniform region: ", nx
-               print*, "Number of cells added to domain: ", nx_stretching
-               print*, "Total number of cells in domain: ", nx+nx_stretching
-               print*, "New domain length with extension is: ", x(nx+1+nx_stretching)
-               print*, "Stretching ratio in x: ", stretching
+               print*, "Number of cells added to left of domain: ", nx_stretchL
+               print*, "Number of cells added to left of domain: ", nx_stretchR
+               print*, "Total number of cells in domain: ", nx+nx_stretchL+nx_stretchR
+               print*, "Stretching ratio in x: ", alpha
+               print*, "Leftmost point (stretched region left): ", x(1)
+               print*, "Start of uniform region: ", start_ref
+               print*, "End of uniform region: ",x(nx+nx_stretchL+1)
+               print*, "Rightmost point (stretched region right): ", x(nx_stretchL+nx+nx_stretchR+1)
+               print*, 'Aspect ratio in uniform region (dx/dy): ',dx/dy
+               print*, "Number of cells per droplet diameter: ", nx*(ddrop/Lx)
                print*, "======================================="             
             end if
 
@@ -135,17 +150,15 @@ contains
                print*, "======== MESH DESCRIPTION IN y ========"
                print*, 'Uniform region height: ', Ly
                print*, 'Stretching in y starts at: +- ', Ly/2
-               print*, 'Number of cells added to the top: ', ny_stretch
-               print*, 'Number of cells added to the top: ', ny_stretch
-               print*, 'Stretching ratio: ', stretching
-               print*, 'Aspect ratio in uniform region (dx/dy): ',dx/dy 
+               print*, 'Number of cells added to the top and to the bottom: ', ny_stretch/2
+               print*, 'Stretching ratio in y: ', alpha
+               print*, 'Aspect ratio in uniform region (dx/dy): ',dx/dy
+               print*, "Number of cells per droplet diameter: ", ny*(ddrop/Ly)
                print*, "========================================"                 
             end if
 
             ! General serial grid object
             grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='ShockDrop')
-
-        !end if
 
       end block create_grid
 

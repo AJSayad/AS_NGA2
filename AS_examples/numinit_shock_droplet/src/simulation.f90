@@ -122,8 +122,9 @@ contains
          else if (extract_flag.eqv.(.false.)) then !AS multiphase simulation with extracted shock profile
             call param_read('Max time',time%tmax)
             call param_read('Multiphase max timestep size',time%dtmax)
-            print*, "Multiphase ending time: ", time%tmax
-
+            if (cfg%amRoot)then
+               print*, "Multiphase ending time: ", time%tmax
+            end if
          end if
 
          call param_read('Max steps',time%nmax)
@@ -222,8 +223,8 @@ contains
          type(bcond), pointer :: mybc
 
          !AS variables for shock extraction
-         integer :: n_shock,q
-         real(WP) :: final_xshock, delta, dx
+         integer :: n_shock,q,shock_index
+         real(WP) :: final_xshock, delta, dx,tol
 
          !AS variables for reading in shock profile
          real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, Ui_profile
@@ -261,6 +262,7 @@ contains
          end if
 
          dx = cfg%dx(1) !Lx/nx !AS NOTE: not generalized
+         tol = dx/3 ! AS set tolerance for reading in shock profile 
          delta = 2*dx*n_shock !AS shock thickness
          if (amRoot) then
             print*, "Total shock profile points: ", 2*n_shock
@@ -365,25 +367,47 @@ contains
          else
             !multiphase numerical initialization
             do i=fs%cfg%imino_,fs%cfg%imaxo_
-               if (cfg%xm(i).le.(xshock-0.5*delta))then !AS post shock values
+               if (cfg%xm(i).le.xshock) then
                   fs%Grho(i,:,:) = Grho1
                   fs%Ui(i,:,:) = vshock
                   fs%GP(i,:,:) = GP1
                   fs%GrhoE(i,:,:) = matmod%EOS_energy(GP1,Grho1,vshock,0.0_WP,0.0_WP,'gas')
-               elseif (cfg%xm(i).ge.(xshock+0.5*delta))then !AS pre shock values
+               elseif (cfg%xm(i).ge.xshock) then
                   fs%Grho(i,:,:) = Grho0
                   fs%Ui(i,:,:) = 0.0_WP
                   fs%GP(i,:,:) = GP0
                   fs%GrhoE(i,:,:) = matmod%EOS_energy(GP0,Grho0,0.0_WP,0.0_WP,0.0_WP,'gas')
-               else !AS read in shock profile data
-                  fs%Grho(i,:,:) = Grho_profile(q)
-                  fs%GrhoE(i,:,:) = GrhoE_profile(q)
-                  fs%Ui(i,:,:) = Ui_profile(q)
-                  q = q + 1 ! add to the counter to move to the next profile value
                end if
             end do
-         end if
 
+            ! find shock index
+            do i=cfg%imino_,cfg%imaxo_
+               if ((cfg%xm(i).lt.(xshock+tol)).and.(cfg%xm(i).gt.(xshock-tol))) then
+                  print*, "The shock has been found at index: ", i
+                  shock_index=i
+                  print*, "stored shock index", shock_index
+               end if
+            end do
+
+            do i=cfg%imino_,cfg%imaxo_
+               if (i.eq.shock_index)then
+                  do j=shock_index-n_shock,shock_index+n_shock ! this is now writing 2*n_shock points
+                     fs%Grho(j,:,:) = Grho_profile(q)
+                     fs%GrhoE(j,:,:) = GrhoE_profile(q)
+                     fs%Ui(j,:,:) = Ui_profile(q)
+                     q = q + 1
+                     if (q.eq.(2*n_shock))then
+                        if(amRoot)then
+                           print*, "Finished reading in shock profile. Numeber of points: ",q
+                           exit
+                        end if
+                     end if
+                  end do
+               end if
+            end do
+            
+         end if
+         
          ! Calculate liquid pressure
          if (fs%cfg%nz.eq.1) then
             ! Cylinder configuration, curv = 1/r
@@ -492,7 +516,6 @@ contains
        create_ensight_smesh: block
          real(WP) :: smesh_tper ! declare variable for smesh output frequency
          call param_read('Ensight smesh output period', smesh_tper)
-         !print*, 'Ensight smesh output period', smesh_tper
          ! create ensight output from cfg for smesh surface reconstruction
          ens_out_smesh=ensight(cfg=cfg,name='droplet_smesh')
          ! create event for ensight output
@@ -673,14 +696,19 @@ contains
      use param, only: param_read
      use parallel,   only: amRoot
      implicit none
-     integer :: i, j,shock_index,n_shock
-     real(WP) :: shock_index_loc, upper_shock_tol, lower_shock_tol, final_xshock, delta
+     integer :: i,j,shock_index,n_shock, nx
+     real(WP) :: shock_index_loc, upper_shock_tol, lower_shock_tol, final_xshock, delta, start_ref,Lx
+     real(WP) :: tol ! AS tolerance for finding final shock location in singlephase
 
+     call param_read('nx',nx)
+     call param_read('Lx',Lx);  call param_read('Lx ref',start_ref);
      call param_read('n_shock',n_shock)
      call param_read('Final shock location',final_xshock)
-
+     call param_read('Lx ref', start_ref, default=0.0_WP);
+     
      delta = 2*cfg%dx(1)*n_shock !shock thickness
-
+     tol = (Lx - start_ref)/nx ! set the tolerance to the mesh spacing in the uniform region
+     
      if (extract_flag.eqv.(.true.)) then
         !set up shock profile data files
         open(1, file='Grho_profile.dat')
@@ -688,12 +716,19 @@ contains
         open(3, file='Ui_profile.dat')
 
         do i=cfg%imino_,cfg%imaxo_
-           if ((cfg%xm(i).ge.(final_xshock-0.5*delta)).and.(cfg%xm(i).le.(final_xshock+0.5*delta))) then
-              write(1,*) fs%Grho(i,1,1)
-              write(2,*) fs%GrhoE(i,1,1)
-              write(3,*) fs%Ui(i,1,1)
+           if ((cfg%xm(i).lt.(final_xshock+tol)).and.(cfg%xm(i).gt.(final_xshock-tol))) then
+              print*, "The shock has been found at index: ", i
+              shock_index=i
+              print*, "stored shock index", shock_index
            end if
         end do
+
+        do i=shock_index-n_shock,shock_index+n_shock ! this is now writing 2*n_shock points
+           write(1,*) fs%Grho(i,1,1)
+           write(2,*) fs%GrhoE(i,1,1)
+           write(3,*) fs%Ui(i,1,1)
+        end do
+
         close(1)
         close(2)
         close(3)
