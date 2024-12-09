@@ -141,6 +141,7 @@ contains
                print*, "Start of uniform region: ", start_ref
                print*, "End of uniform region: ",x(nx+nx_stretchL+1)
                print*, "Rightmost point (stretched region right): ", x(nx_stretchL+nx+nx_stretchR+1)
+               print*, "Aspect ratio: ", dx/dy
                print*, "Number of cells per droplet diameter: ", nx*(ddrop/Lx)
                print*, "======================================="             
             end if
@@ -151,6 +152,7 @@ contains
                print*, 'Stretching in y starts at: +- ', Ly/2
                print*, 'Number of cells added to the top and to the bottom: ', ny_stretch/2
                print*, 'Stretching ratio in y: ', alpha
+               print*, "Aspect ratio: ", dx/dy
                print*, "Number of cells per droplet diameter: ", ny*(ddrop/Ly)
                print*, "========================================"                 
             end if
