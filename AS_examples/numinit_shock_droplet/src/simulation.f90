@@ -223,14 +223,17 @@ contains
          type(bcond), pointer :: mybc
 
          !AS variables for shock extraction
-         integer :: n_shock,q,shock_index
-         real(WP) :: final_xshock, delta, dx,tol
+         integer :: n_shock,q,shock_index,nx
+         real(WP) :: final_xshock, delta, dx,tol,Lx
 
          !AS variables for reading in shock profile
          real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, Ui_profile
 
          !AS set up for shock profile
          call param_read('n_shock',n_shock) !AS number of points to the left and right of shock for profile
+         call param_read('Lx',Lx)
+         call param_read('nx',nx)
+
 
          ! Initialize conditions
          if (extract_flag.eqv.(.true.)) then !AS singlephase simulation
@@ -261,7 +264,7 @@ contains
 
          end if
 
-         dx = cfg%dx(1) !Lx/nx !AS NOTE: not generalized
+         dx = Lx/nx
          tol = dx/3 ! AS set tolerance for reading in shock profile 
          delta = 2*dx*n_shock !AS shock thickness
          if (amRoot) then
