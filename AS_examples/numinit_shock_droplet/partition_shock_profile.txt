@@ -1,5 +1,0 @@
-With the current setup, the numerical shock profile that is read into the multiphase simulation must not fall in between processor domains.
-This will cause NaNs to arise at the very beginning of the simulation and the profile will not look correct when plotted.
-
-This still needs to be fixed as of 12/10/2024, the work around for right now is to place the shock around processor domains
-or to partition the grid in such a way that the shock falls only within one subdomain.
