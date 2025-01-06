@@ -4,7 +4,7 @@ module simulation
    use geometry,          only: cfg
    use mast_class,        only: mast
    use vfs_class,         only: vfs
-   use matm_class,        only: matm,water !AS
+   use matm_class,        only: matm
    use timetracker_class, only: timetracker
    use ensight_class,     only: ensight
    use event_class,       only: event
@@ -87,15 +87,15 @@ contains
          real(WP) :: vol,area
          integer, parameter :: amr_ref_lvl=4
 
-         real(WP) :: interface_loc,Lx,dx,gas_length !AS
-         integer :: nx, spread, spread_ctr !AS
+         real(WP) :: interface_loc,Lx,dx
+         integer :: nx,spread,spread_ctr
 
-         call param_read('Gas Phase Spread',spread) !AS
-         call param_read('Gas Phase Spread Center',spread_ctr)
+         call param_read('Gas Phase Spread',spread) !number of cells the high pressure gas region is spread over
+         call param_read('Gas Phase Spread Center',spread_ctr) !the cell in which the gas region is centered on
 
          ! Create a VOF solver with lvira reconstruction
-         ! vf=vfs(cfg=cfg,reconstruction_method=elvira,name='VOF')
          call vf%initialize(cfg=cfg,reconstruction_method=lvira,name='VOF')
+         
          ! Initialize liquid at left
          do k=vf%cfg%kmino_,vf%cfg%kmaxo_
             do j=vf%cfg%jmino_,vf%cfg%jmaxo_
@@ -114,11 +114,8 @@ contains
             end do
          end do
 
-         !AS set the phases
          call param_read('Lx',Lx)
-         !print*, "Lx is read in: ",Lx
          call param_read('nx',nx)
-         !print*, "nx is read in: ",nx
          dx = Lx/nx
 
          ! Boundary conditions on VF are built into the mast solver
@@ -154,12 +151,11 @@ contains
          integer :: nx, spread, spread_ctr
          type(bcond), pointer :: mybc
 
-         call param_read('Gas Phase Spread',spread) !AS
+         call param_read('Gas Phase Spread',spread)
          print*, "Gas phase cell spread: ", spread
          call param_read('Gas Phase Spread Center',spread_ctr)
          print*, "Gas phase spread center (cell): ", spread_ctr
 
-         
          ! Create material model class
          matmod=matm(cfg=cfg,name='Liquid-gas models')
          
@@ -203,7 +199,6 @@ contains
          ! Setup the solver
          call fs%setup(pressure_solver=ps,implicit_solver=vs)
 
-         !AS
          call param_read('Liquid density',Lrho0)
          call param_read('Liquid pressure',LP0)
          call param_read('Liquid initial velocity',Lu0)
@@ -211,19 +206,19 @@ contains
          call param_read('Gas pressure',GP0)
          call param_read('Gas initial velocity',Gu0)
 
-         GP0 = GP0/(spread*cfg%dx(1))
+         !as in problem definition, divide high pressure region by the length it's spread over
+         GP0 = GP0/(spread*cfg%dx(1)) !intended as a uniform mesh case
 
-         if (cfg%amRoot) then !AS
+         if (cfg%amRoot) then
             print *, "===== Problem Setup Description ====="
             print *, "High Pressure Region Cell Spread: ",spread
             print *, "High Pressure Region Centered on Cell: ",spread_ctr
-            print *, "Lrho0: ",Lrho0
-            print *, "LP0: ",LP0
-            print *, "Lu0: ",Lu0
-            print *, "Grho0: ",Grho0
-            print *, "GP0 (after division byspread*dx): ",GP0
-            print *, "GP0: ",GP0
-            print *, "Gu0: ",Gu0
+            print *, "Liquid density: ",Lrho0
+            print *, "Liquid pressure: ",LP0
+            print *, "Liquid velocity: ",Lu0
+            print *, "Gas density: ",Grho0
+            print *, "Gas pressure (after division by spread*dx): ",GP0
+            print *, "Gas velocity: ",Gu0
          end if
 
          ! Liquid and gas density
@@ -236,10 +231,16 @@ contains
          do i=vf%cfg%imino_,vf%cfg%imaxo_
             if ((i.le.spread_ctr + 0.5*spread).and.(i.gt.spread_ctr - 0.5*spread)) then
                !gas
+               fs%GP(i,:,:) = GP0
+               fs%Grho(i,:,:) = Grho0
+               fs%Ui(i,:,:) = Gu0
                fs%GrhoE(i,:,:) = matmod%EOS_energy(GP0,Grho0,0.0_WP,0.0_WP,0.0_WP,'gas')
                fs%LrhoE(i,:,:) = matmod%EOS_energy(GP0,Lrho0,0.0_WP,0.0_WP,0.0_WP,'liquid')
             else
-               !liquid  
+               !liquid
+               fs%LP(i,:,:) = LP0
+               fs%Lrho(i,:,:) = Lrho0
+               fs%Ui(i,:,:) = Lu0
                fs%GrhoE(i,:,:) = matmod%EOS_energy(LP0,Grho0,0.0_WP,0.0_WP,0.0_WP,'gas')
                fs%LrhoE(i,:,:) = matmod%EOS_energy(LP0,Lrho0,0.0_WP,0.0_WP,0.0_WP,'liquid')               
             end if
@@ -247,23 +248,20 @@ contains
 
          fs%LP = LP0
 
-         ! Initialize liquid energy, with surface tension
-         fs%LrhoE = matmod%EOS_energy(LP0,Lrho0,0.0_WP,0.0_WP,0.0_WP,'liquid')
-
          ! Define boundary conditions - initialized values are intended dirichlet values too, for the cell centers
          call fs%add_bcond(name= 'inflow',type=dirichlet      ,locator=left_of_domain ,face='x',dir=-1)
          call fs%add_bcond(name='outflow',type=clipped_neumann,locator=right_of_domain,face='x',dir=+1)
 
          ! Calculate face velocities
          call fs%interp_vel_basic(vf,fs%Ui,fs%Vi,fs%Wi,fs%U,fs%V,fs%W)
-         
 
          ! Apply face BC - inflow
          call fs%get_bcond('inflow',mybc)
          do n=1,mybc%itr%n_
             i=mybc%itr%map(1,n); j=mybc%itr%map(2,n); k=mybc%itr%map(3,n)
-            fs%U(i,j,k)=0.0_WP!vshock
+            fs%U(i,j,k)=0.0_WP !zero velocity inflow BC
          end do
+         
          ! Apply face BC - outflow
          bc_scope = 'velocity'
          call fs%apply_bcond(time%dt,bc_scope)
@@ -275,6 +273,7 @@ contains
          ! Perform initial pressure relax
          relax_model = mech_egy_mech_hhz
          call fs%pressure_relax(vf,matmod,relax_model)
+
          ! Calculate initial phase and bulk moduli
          call fs%init_phase_bulkmod(vf,matmod)
          call fs%reinit_phase_pressure(vf,matmod)
@@ -314,14 +313,14 @@ contains
          call ens_out%add_scalar('VOF',vf%VF)
          call ens_out%add_scalar('curvature',vf%curv)
          call ens_out%add_scalar('Mach',fs%Mach)
-         call ens_out%add_scalar('Vol_frac',cfg%VF)!AS
-         call ens_out%add_scalar('T',fs%Tmptr) !AS
-         call ens_out%add_scalar('SL_x',fs%sl_x) !AS
-         call ens_out%add_scalar('SL_y',fs%sl_y) !AS
-         call ens_out%add_scalar('SL_z',fs%sl_z) !AS
-         call ens_out%add_scalar('LP',fs%LP) !AS
-         call ens_out%add_scalar('GrhoE',fs%GrhoE) !AS
-         call ens_out%add_scalar('LrhoE',fs%LrhoE) !AS
+         call ens_out%add_scalar('Vol_frac',cfg%VF)
+         call ens_out%add_scalar('T',fs%Tmptr)
+         call ens_out%add_scalar('SL_x',fs%sl_x)
+         call ens_out%add_scalar('SL_y',fs%sl_y)
+         call ens_out%add_scalar('SL_z',fs%sl_z)
+         call ens_out%add_scalar('LP',fs%LP)
+         call ens_out%add_scalar('GrhoE',fs%GrhoE)
+         call ens_out%add_scalar('LrhoE',fs%LrhoE)
          ! Output to ensight
          if (ens_evt%occurs()) call ens_out%write_data(time%t)
       end block create_ensight
@@ -396,6 +395,7 @@ contains
          call fs%reinit_phase_pressure(vf,matmod)
          fs%Uiold=fs%Ui; fs%Viold=fs%Vi; fs%Wiold=fs%Wi
          fs%RHOold = fs%RHO
+         
          ! Remember old flow variables (phase)
          fs%Grhoold = fs%Grho; fs%Lrhoold = fs%Lrho
          fs%GrhoEold=fs%GrhoE; fs%LrhoEold=fs%LrhoE
@@ -426,17 +426,20 @@ contains
 
             ! Prepare pressure projection
             call fs%pressureproj_prepare(time%dt,vf,matmod)
+
             ! Initialize and solve Helmholtz equation
             call fs%psolv%setup()
             fs%psolv%sol=fs%PA-fs%P
             call fs%psolv%solve()
             call fs%cfg%sync(fs%psolv%sol)
+
             ! Perform corrector step using solution
             fs%P=fs%P+fs%psolv%sol
             call fs%pressureproj_correct(time%dt,vf,fs%psolv%sol)
 
             ! Record convergence monitor
             call cvgfile%write()
+
             ! Increment sub-iteration counter
             time%it=time%it+1
 

@@ -12,7 +12,6 @@ module geometry
 
 contains
 
-
    !> Initialization of problem geometry
    subroutine geometry_init
       use sgrid_class, only: sgrid
@@ -21,7 +20,6 @@ contains
       use messager,    only: die
       implicit none
       type(sgrid) :: grid
-
 
       ! Create a grid from input params
       create_grid: block
@@ -41,13 +39,11 @@ contains
          call param_read('nz',nz,default=1); allocate(z(nz+1))
 
          if (nz.eq.1) then
-           Lz = dx
+            Lz = dx
+            Ly = dx
          else
            call param_read('Lz',Lz)
          end if
-         ! Read in droplet information
-         call param_read('Droplet diameter',ddrop)
-         call param_read('Droplet location',dctr)
 
          if (param_exists('Cells per diameter')) then
            ! Stretched grid
@@ -265,7 +261,14 @@ contains
          ! Create partitioned grid
          cfg=config(grp=group,decomp=partition,grid=grid)
 
-      end block create_cfg
+       end block create_cfg
+
+      create_walls: block
+         if (cfg%iproc.eq.1) cfg%VF(:cfg%imin-1,:,:)=0.0_WP
+         if (cfg%iproc.eq.cfg%npx) cfg%VF(cfg%imax+1:,:,:)=0.0_WP   
+
+       end block create_walls
+       
 
 
    end subroutine geometry_init
