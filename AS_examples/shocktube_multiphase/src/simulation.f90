@@ -4,7 +4,7 @@ module simulation
    use geometry,          only: cfg
    use mast_class,        only: mast
    use vfs_class,         only: vfs
-   use matm_class,        only: matm,water !AS
+   use matm_class,        only: matm
    use timetracker_class, only: timetracker
    use ensight_class,     only: ensight
    use surfmesh_class,    only: surfmesh   
@@ -24,7 +24,7 @@ module simulation
    type(hypre_str),   public :: vs
 
    !> Ensight postprocessing
-   type(surfmesh) :: smesh !AS   
+   type(surfmesh) :: smesh 
    type(ensight) :: ens_out
    type(event)   :: ens_evt
 
@@ -75,7 +75,7 @@ contains
          call param_read('Max time',time%tmax)
          call param_read('Max steps',time%nmax)
          time%dt=time%dtmax
-         time%itmax=3 !2 !AS
+         time%itmax=3
       end block initialize_timetracker
 
       ! Initialize our VOF solver and field
@@ -87,10 +87,10 @@ contains
          real(WP), dimension(3) :: v_cent,a_cent
          real(WP) :: vol,area
          integer, parameter :: amr_ref_lvl=4
-         real(WP) :: interface_loc !AS
+         real(WP) :: interface_loc ! phase interface location
 
-         call param_read('Interface location',interface_loc) !AS
-         if (cfg%amRoot) then !AS
+         call param_read('Interface location',interface_loc)
+         if (cfg%amRoot) then
             print *, "The gas-liquid interface location is at: ", interface_loc
          end if
 
@@ -101,12 +101,14 @@ contains
          do k=vf%cfg%kmino_,vf%cfg%kmaxo_
             do j=vf%cfg%jmino_,vf%cfg%jmaxo_
                do i=vf%cfg%imino_,vf%cfg%imaxo_
+                  
                   ! Stick to single-phase cells
                   if (vf%cfg%x(i).lt.interface_loc) then
                      vf%VF(i,j,k)=1.0_WP ! set liquid 
                   else
-                     vf%VF(i,j,k)=0.0_WP
+                     vf%VF(i,j,k)=0.0_WP ! set gas
                   end if
+                  
                   vf%Lbary(:,i,j,k)=[vf%cfg%xm(i),vf%cfg%ym(j),vf%cfg%zm(k)]
                   vf%Gbary(:,i,j,k)=[vf%cfg%xm(i),vf%cfg%ym(j),vf%cfg%zm(k)]
                end do
@@ -132,7 +134,6 @@ contains
          call vf%reset_volume_moments()
       end block create_and_initialize_vof
 
-
       ! Create a compressible two-phase flow solver
       create_and_initialize_flow_solver: block
          use mast_class, only: clipped_neumann,dirichlet,bc_scope,bcond,mech_egy_mech_hhz
@@ -142,16 +143,16 @@ contains
          integer :: i,j,k,n
          real(WP), dimension(3) :: xyz
          real(WP) :: gamm_l,Pref_l,gamm_g,visc_l,visc_g,Pref,cv_l0,cv_g0,kappa_l,kappa_g
-         real(WP) :: interface_loc !AS
+         real(WP) :: interface_loc ! phase interface location
          real(WP) :: Lrho0,LP0, Lu0,sigma
-         real(WP) :: Grho0,GP0,Gu0 !AS
+         real(WP) :: Grho0,GP0,Gu0
          type(bcond), pointer :: mybc
 
          ! Create material model class
          matmod=matm(cfg=cfg,name='Liquid-gas models')
 
          ! Get EOS parameters from input
-         call param_read('Liquid Pref', Pref_l) !AS added
+         call param_read('Liquid Pref', Pref_l)
          call param_read('Liquid gamma',gamm_l)
          call param_read('Gas gamma',gamm_g)
 
@@ -176,8 +177,7 @@ contains
          call matmod%register_diffusion_thermo_models(viscconst_gas=visc_g, viscconst_liquid=visc_l,hdffconst_gas=kappa_g, hdffconst_liquid=kappa_l,sphtconst_gas=cv_g0,sphtconst_liquid=cv_l0)
 
          ! Read in surface tension coefficient
-         !call param_read('Gas Weber number',Weg); fs%sigma=1.0_WP/(Weg+epsilon(Weg)) !AS removed
-         call param_read('Surface tension coefficient',fs%sigma) !AS added: surface tension
+         call param_read('Surface tension coefficient',fs%sigma)
          
          ! Configure pressure solver
          ps=hypre_str(cfg=fs%cfg,name='Pressure',method=pcg_pfmg,nst=7)
@@ -197,23 +197,24 @@ contains
          call param_read('Interface location',interface_loc)
          call param_read('Liquid density',Lrho0)
          call param_read('Liquid pressure',LP0)
-         call param_read('Liquid initial velocity',Lu0)
+         call param_read('Liquid velocity',Lu0)
          call param_read('Gas density',Grho0)
          call param_read('Gas pressure',GP0)
-         call param_read('Gas initial velocity',Gu0)
+         call param_read('Gas velocity',Gu0)
 
-         if (cfg%amRoot) then !AS
+         if (cfg%amRoot) then 
             print *, "==== INITIAL CONDITIONS ===="
             print *, "Phase interface location: ", interface_loc
             print *, "Liquid density: ",Lrho0
             print *, "Liquid pressure: ",LP0
-            print *, "Liquid velocity (x): ",Lu0
+            print *, "Liquid velocity: ",Lu0
             print *, "Gas density: ",Grho0
             print *, "Gas pressure: ",GP0
-            print *, "Gas velocity (x): ",Gu0
+            print *, "Gas velocity: ",Gu0
          end if
 
-         fs%Lrho=Lrho0; fs%Grho=Grho0 ! set phase densities
+         ! set phase densities
+         fs%Grho = Grho0; fs%Lrho = Lrho0
 
          ! Initially 0 velocity in y and z
          ! velocity in x direction is set in the input file 
@@ -227,9 +228,13 @@ contains
             !pressure, velocity, use matmode for energy
             if (fs%cfg%x(i).lt.interface_loc)then
                fs%LP(i,:,:) = LP0
+               fs%Lrho(i,:,:) = Lrho0
+               fs%Ui(i,:,:) = Lu0
                fs%LrhoE(i,:,:) = matmod%EOS_energy(LP0,Lrho0,Lu0,0.0_WP,0.0_WP,'liquid')
             else
                fs%GP(i,:,:) = GP0
+               fs%Grho(i,:,:) = Grho0
+               fs%Ui(i,:,:) = Gu0
                fs%GrhoE(i,:,:) = matmod%EOS_energy(GP0,Grho0,Gu0,0.0_WP,0.0_WP,'gas')
             end if
          end do
@@ -245,7 +250,7 @@ contains
          call fs%get_bcond('inflow',mybc)
          do n=1,mybc%itr%n_
             i=mybc%itr%map(1,n); j=mybc%itr%map(2,n); k=mybc%itr%map(3,n)
-            fs%U(i,j,k)=Lu0 ! AS intended to have liquid on the left of interface --> set inflow condition to specified liquid velocity from input file
+            fs%U(i,j,k)=Lu0 ! set inflow to be initial liquid velocity (*usually zero*)
          end do
          
          ! Apply face BC - outflow
@@ -288,13 +293,13 @@ contains
          call ens_out%add_scalar('VOF',vf%VF)
          call ens_out%add_scalar('curvature',vf%curv)
          call ens_out%add_scalar('Mach',fs%Mach)
-         call ens_out%add_scalar('fvf',cfg%VF)!AS
-         call ens_out%add_scalar('T',fs%Tmptr) !AS
-         call ens_out%add_scalar('SL_x',fs%sl_x) !AS
-         call ens_out%add_scalar('SL_y',fs%sl_y) !AS
-         call ens_out%add_scalar('SL_z',fs%sl_z) !AS
-         call ens_out%add_scalar('LP',fs%LP) !AS
-         call ens_out%add_surface('plic',smesh) !AS         
+         call ens_out%add_scalar('fvf',cfg%VF)
+         call ens_out%add_scalar('T',fs%Tmptr)
+         call ens_out%add_scalar('SL_x',fs%sl_x)
+         call ens_out%add_scalar('SL_y',fs%sl_y)
+         call ens_out%add_scalar('SL_z',fs%sl_z)
+         call ens_out%add_scalar('LP',fs%LP)
+         call ens_out%add_surface('plic',smesh)         
          ! Output to ensight
          if (ens_evt%occurs()) call ens_out%write_data(time%t)
       end block create_ensight
@@ -374,6 +379,7 @@ contains
          call fs%reinit_phase_pressure(vf,matmod)
          fs%Uiold=fs%Ui; fs%Viold=fs%Vi; fs%Wiold=fs%Wi
          fs%RHOold = fs%RHO
+         
          ! Remember old flow variables (phase)
          fs%Grhoold = fs%Grho; fs%Lrhoold = fs%Lrho
          fs%GrhoEold=fs%GrhoE; fs%LrhoEold=fs%LrhoE
@@ -427,8 +433,7 @@ contains
          call fs%pressure_relax(vf,matmod,relax_model)
 
          ! Output to ensight
-         !if (ens_evt%occurs()) call ens_out%write_data(time%t)
-         if (ens_evt%occurs()) then !AS output to ensight
+         if (ens_evt%occurs()) then
             call vf%update_surfmesh(smesh)
             call ens_out%write_data(time%t)
          end if         
@@ -443,7 +448,6 @@ contains
       end do
 
    end subroutine simulation_run
-
 
    !> Finalize the NGA2 simulation
    subroutine simulation_final
