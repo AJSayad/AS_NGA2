@@ -35,7 +35,6 @@ Gas specific heat (constant vol): 717.6
 Max timestep size : 1.5e-8
 Max cfl number :    0.5
 Max time :     	    1e-3
-# To look at breakup, use tmax = 2.9e-3
 Max steps :	   100000
 
 # Pressure solver
@@ -52,7 +51,4 @@ Ensight output period : 2e-5 # 50 output files
 
 
 #AS left in from shock droplet example 
-# Flow setup
-Droplet diameter :   0.0
-Droplet location :   0.00 0 0
 Shock location :      0.0
