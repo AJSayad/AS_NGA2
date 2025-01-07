@@ -24,42 +24,44 @@ contains
       create_grid: block
          use sgrid_class, only: cartesian
          integer :: i,j,k,nx,ny,nz
-         integer :: cpd,cpl,np,nyr,nxr
-         real(WP) :: rdx,dx,box_x1,box_x2,box_y1,ddrop
-         real(WP), dimension(3) :: dctr
-         real(WP) :: Lcalc,r,rold,err,tol
+         real(WP) :: ddrop, dx
+         !real(WP) :: Lcalc,r,rold,err,tol
          real(WP) :: Lx,Ly,Lz
          real(WP), dimension(:), allocatable :: x,y,z
 
          !AS variables for stretching in x
-         integer :: nx_stretching
-         real(WP) :: dx_new, stretching
+         integer ::  nx_stretchL,nx_stretchR
+         real(WP) :: dx_old,alpha,dx_ref,start_ref
 
          !AS variables for stretching in y
          real(WP) :: y_box1,dy,dy_old,dy_stretch,Ly_ref
-         integer :: ny_stretch
+         integer ::  ny_stretch
          
          !AS variable for shock profile extraction
          logical :: extract_flag !AS
 
          call param_read('Profile extraction flag',extract_flag) !AS
          ! Read in grid definition
-         call param_read('Lx',Lx); call param_read('nx',nx); call param_read('nx stretch',nx_stretching); allocate(x(nx+nx_stretching+1)) !AS allocates x to be 1 larger than the extended nx
+         call param_read('Lx',Lx); call param_read('Lx ref', start_ref, default=0.0_WP);
+         !print *, "START REF: ",start_ref
+         call param_read('nx',nx); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
+
+         allocate(x(nx+nx_stretchL+nx_stretchR+1));
+
          dx = Lx/nx
-         call param_read('Ly',Ly);
+         dx_ref = (Lx - start_ref)/real(nx,WP)
 
          !AS if profile is being extracted, run the simulation in 1D
          if (extract_flag.eqv.(.true.)) then
+            call param_read('Ly',Ly);
             ny = 1 !if singlephase, run in 1D
             allocate(y(ny+1))
-            call param_read('nz',nz,default=1); allocate(z(nz+1))
          else if (extract_flag.eqv.(.false.)) then !if the multiphase sim is running, run the sim in 2D, include mesh streching
             !call param_read('ny',ny); allocate(y(ny+1))
             call param_read('Ly',Ly); call param_read('ny',ny); call param_read('ny stretch',ny_stretch); allocate(y(ny+2*ny_stretch+1)) !AS
-            call param_read('nz',nz,default=1); allocate(z(nz+1))
          end if
-            
 
+         call param_read('nz',nz,default=1); allocate(z(nz+1))
          if (nz.eq.1) then
             Lz = dx
          else
@@ -68,250 +70,79 @@ contains
         
          ! Read in droplet information
          call param_read('Droplet diameter',ddrop)
-         call param_read('Droplet location',dctr)
-
-         if (param_exists('Cells per diameter')) then
-           ! Stretched grid
-           if (amRoot) print*,"===== Stretched Mesh Description ====="
-           call param_read('Cells per diameter',cpd)
-           call param_read('Cells per left region',cpl)
-           call param_read('Refined region left bdy',box_x1)
-           call param_read('Refined region right bdy',box_x2)
-           call param_read('Refined region top bdy',box_y1,default=0.0_WP)
-
-           ! Refined cell size
-           rdx = ddrop/cpd
-
-           !! Left x region: 0 to x1    !!
-           ! check if stretching is possible, given inputs
-           if ((rdx*cpl) .ge. box_x1) then
-             if (amRoot) then
-               print*,"MESH ERROR: using uniform spacing in initial stretched x region meets or exceeds the boundary"
-               print*,"- prescribed region length x1:",box_x1,"region length with uniform spacing:",rdx*cpl
-             end if
-             call die("[geometry] geometric series is impossible (0). please alter inputs")
-           end if
-           tol = 1e-10_WP ! tolerance for how close calculated Lx should be to real Lx
-           ! initial values for loop to find r
-           err = 1.0_WP
-           r = 1.1_WP
-           i = 0
-           ! loop to find r
-           do while (err.gt.tol)
-             i = i+1
-             rold = r ! store r from last iteration
-             r = (1.0_WP-(1.0_WP-rold)*(box_x1+rdx)/rdx)**(1.0_WP/(real(cpl+1,WP))) ! calculate new r
-             Lcalc = -rdx+rdx*(1.0_WP-r**(real(cpl+1,WP)))/(1.0_WP-r) ! use new r to calc Lx
-             err = abs(Lcalc-box_x1) ! find err
-           end do
-           if (amRoot) print*,'Left x stretching ratio',r
-           x(1) = 0.0_WP
-           x(cpl+1) = box_x1
-           ! use r to populate x
-           do i = cpl,1,-1
-             x(i) = x(i+1)-rdx*r**(cpl+1-i)
-           end do
-
-           !! Middle x region: x1 to x2 !!
-           nxr = ceiling((box_x2-box_x1)/rdx)
-           if (nx .le. nxr+cpl) then
-             if (amRoot) then
-               print*,"MESH ERROR: insufficient number of points for x direction"
-               print*,"= prescribed total points",nx
-               print*,"= left stretched pts",cpl,"refined pts",nxr,"right stretched pts",nx-nxr-cpl
-             end if
-             call die("[geometry] geometric series is impossible (1). please alter inputs")
-           end if
-           do i=2,nxr+1
-             x(cpl+i) = x(cpl+i-1)+rdx
-           end do
-           box_x2 = x(cpl+nxr+1)
-
-           !! Right x region: x2 to Lx  !!
-           np = nx-nxr-cpl
-           ! check if stretching is possible, given inputs
-           if ((box_x2+rdx*np) .ge. Lx) then
-             if (amRoot) then
-               print*,"MESH ERROR: using uniform spacing in final x stretched region meets or exceeds the boundary"
-               print*,"= prescribed length Lx:",Lx,"length with uniform spacing:",box_x2+rdx*np
-             end if
-             call die("[geometry] geometric series is impossible (2). please alter inputs")
-           end if
-           ! Need to make these abort statements
-           tol = 1e-10_WP ! tolerance for how close calculated Lx should be to real Lx
-           ! initial values for loop to find r
-           err = 1.0_WP
-           r = 1.1_WP
-           i = 0
-           ! loop to find r
-           do while (err.gt.tol)
-             i = i+1
-             rold = r ! store r from last iteration
-             r = (1.0_WP-(1.0_WP-rold)*(Lx-box_x2+rdx)/rdx)**(1.0_WP/real(np+1,WP)) ! calculate new r
-             Lcalc = box_x2-rdx+rdx*(1.0_WP-r**real(np+1,WP))/(1.0_WP-r) ! use new r to calc Lx
-             err = abs(Lcalc-Lx) ! find err
-           end do
-           if (amRoot) print*,'Right x stretching ratio',r
-           ! use r to populate x
-           do i = nxr+cpl+2,nx+1
-             x(i) = x(i-1)+rdx*r**(i-nxr-cpl-1)
-           end do
-           ! Assuming everything is spaced correctly, Make boundary points exact
-           x(1) = 0.0_WP
-           x(nx+1) = Lx
-
-
-           if (ny.eq.1) then
-             ! Check if y is a single cell
-             y(1) = -0.5 * rdx
-             y(2) = 0.5 * rdx
-
-           elseif (box_y1.eq.0.0_WP) then
-             ! If y is not meant to be stretched, use uniform spacing for y
-             y(ny/2+1) = 0.0_WP
-             ! Use inner resolution for all cells
-             do j = 2,ny/2+1
-               y(ny/2+j) = y(ny/2+j-1)+rdx
-             end do
-             ! All points are uniform
-             nyr = ny/2-1
-             if (amRoot) print*,"No stretching in y. Ly:",Ly,"rdx*ny",rdx*ny
-
-           else
-             !! Middle y region: 0 to y1  !!
-             nyr = ceiling(box_y1/rdx)
-             if (ny/2 .le. nyr) then
-               if (amRoot) then
-                 print*,"MESH ERROR: insufficient number of points for y direction"
-                 print*,"= prescribed total points",ny
-                 print*,"= refined pts",2*nyr,"right stretched pts",ny-2*nyr
-               end if
-               call die("[geometry] geometric series is impossible (3). please alter inputs")
-             end if
-             y(ny/2+1) = 0.0_WP
-             do j=2,nyr+1
-               y(ny/2+j) = y(ny/2+j-1)+rdx
-             end do
-             box_y1 = y(ny/2+nyr+1)
-
-             !! Top y region: y1 to Ly/2  !!
-             np = ny/2-nyr
-             ! check if stretching is possible, given inputs
-             if ((box_y1+rdx*np) .ge. Ly/2) then
-               if (amRoot) then
-                 print*,"MESH ERROR: using uniform spacing in stretched y regions meets or exceeds the boundaries"
-                 print*,"= prescribed half height Ly/2:",Ly/2,"half height with uniform spacing",box_y1+rdx*np
-               end if
-               call die("[geometry] geometric series is impossible (4). please alter inputs")
-             end if
-             tol = 1e-10_WP ! tolerance for how close calculated Ly should be to real Ly
-             ! initial values for loop to find r
-             err = 1.0_WP
-             r = 1.1_WP
-             i = 0
-             ! loop to find r
-             do while (err.gt.tol)
-               i = i+1
-               rold = r ! store r from last iteration
-               r = (1.0_WP-(1.0_WP-rold)*(Ly/2.0_WP-box_y1+rdx)/rdx)**(1.0_WP/real(np+1,WP)) ! calculate new r
-               Lcalc = box_y1-rdx+rdx*(1.0_WP-r**real(np+1,WP))/(1.0_WP-r) ! use new r to calc Lx
-               err = abs(Lcalc-Ly/2.0_WP) ! find err
-             end do
-             if (amRoot) print*,'Top y stretching ratio',r
-             ! use r to populate y
-             do j = nyr+2,ny/2+1
-               y(ny/2+j) = y(ny/2+j-1)+rdx*r**(j-nyr-1)
-             end do
-             ! Assuming everything is spaced correctly, Make boundary points exact
-             y(1) = -Ly/2.0_WP
-             y(ny+1) = Ly/2.0_WP
-           end if
-
-           !! Mirror y for bottom half: -Ly/2 to 0  !!
-           do j = 1,ny/2
-             y(j) = -y(ny+2-j)
-           end do
-
-           ! Print mesh data to check
-           if (amRoot) then
-             print*,'Left stretched region'
-             print*,'    first dx',x(2)-x(1),'last dx',x(cpl+1)-x(cpl)
-             print*,'    first pt',x(1),'last point',x(cpl+1),'x1',box_x1
-             print*,'Uniform x region'
-             print*,'    dx',x(cpl+2)-x(cpl+1),'rdx',rdx
-             print*,'    last pt',x(cpl+nxr+1),'number of pts',nxr
-             print*,'Right stretched region'
-             print*,'    first dx',x(cpl+nxr+2)-x(cpl+nxr+1),'last dx',x(nx+1)-x(nx)
-             print*,'    last pt',x(nx+1)
-             print*,'Uniform y region'
-             print*,'    dy',y(ny/2+2)-y(ny/2+1),'rdx',rdx
-             print*,'    first pt',y(ny/2+1),'number of pts',nyr
-             print*,'Top stretched region'
-             print*,'    first dy',y(ny/2+nyr+2)-y(ny/2+nyr+1),'last dy',y(ny+1)-y(ny)
-             print*,'    first pt',y(ny/2+nyr+1),'last pt',y(ny+1)
-             print*,'Bottom region'
-             print*,'    first pt',y(1),'last pt',y(ny/2-nyr+1)
-             print*,' '
-           end if
-
-         else
-            !AS mesh in x
-            stretching=1.1_WP
-            do i=1,nx+1
-               x(i) = real(i-1,WP)*dx
+         
+            !AS uniform mesh region
+            alpha=1.05_WP
+            do i=nx_stretchL+1,nx+nx_stretchL+1
+               x(i) = start_ref + real(i-1-nx_stretchL,WP)*dx_ref
             end do
 
-            !AS stretching in x
-            do i=nx+2, nx+1+nx_stretching
-               dx_new = (x(i-1)-x(i-2))*stretching !change in cell size, this is the distance
-               x(i) = x(i-1)+dx_new !location of new point, this is the distance plus the distance from the previously defined point
+            ! stretch left of domain
+            do i=nx_stretchL,1,-1
+               dx_old = abs(x(i+2) - x(i+1))
+               x(i) = x(i+1) - dx_old*alpha
+            end do
+
+            ! stretch right of domain
+            do i=nx+nx_stretchL+2,nx+nx_stretchL+nx_stretchR+1
+               dx_old = x(i-1)-x(i-2)
+               x(i) = x(i-1)+dx_old*alpha !location of new point, this is the distance plus the distance from the previously defined point
                !for a uniform mesh it would be x(i) = x(i-1)+dx
             end do
 
-           !do j=1,ny+1
-           !   y(j) = real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
-           !end do
+           !AS mesh in y
+            if (extract_flag.eqv.(.true.)) then
+               ! uniform 1 cell mesh in y for 1D sim
+               do j=1,ny+1
+                  ny_stretch = 0 !1D
+                  dy = Ly/ny
+                  y(j) = real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
+               end do
+            else
+               do j=1,ny+2*ny_stretch+1 !initialize y mesh array
+                  y(j) = 0.0_WP !real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
+               end do
 
-            !AS mesh in y
-            do j=1,ny+2*ny_stretch+1 !initialize y mesh array
-               y(j) = 0.0_WP !real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
-            end do
+               dy = Ly/ny !define uniform grid spacing
+               y(ny/2+ny_stretch+1) = 0.0_WP !define the centerline of the domain
 
-            dy = Ly/ny !define uniform grid spacing
-            y(ny/2+ny_stretch+1) = 0.0_WP !define the centerline of the domain
+               !y array uniform region
+               do j=ny/2+ny_stretch+2,ny+ny_stretch+1
+                  y(j) = y(j-1) + dy
+               end do
 
-            do j=ny/2+ny_stretch+2,ny+ny_stretch+1
-               y(j) = y(j-1) + dy !populate y array uniform region
-               !print*, "j in first loop: ",j
-               !print*, "y(j) in first loop: ",y(j)
-            end do
+               !stretching in y
+               do j=ny+ny_stretch+2,ny+(2*ny_stretch)+1
+                  dy_old = y(j-2) - y(j-3)
+                  dy_stretch = alpha*dy_old
+                  y(j) = y(j-1) + dy_stretch
+               end do
 
-            !stretching in y
-            do j=ny+ny_stretch+2,ny+(2*ny_stretch)+1
-               dy_old = y(j-2) - y(j-3)
-               dy_stretch = stretching*dy_old
-               y(j) = y(j-1) + dy_stretch
-               !print*, "j in second loop: ",j
-               !print*, "y(j) in second loop: ",y(j)              
-            end do
-
-            ! mirror y across y=0 line
-            do j = 1,ny/2+ny_stretch
-               y(j) = -y(ny-j+(2*ny_stretch)+2)
-            end do
-
+               ! mirror y across y=0 line
+               do j = 1,ny/2+ny_stretch
+                  y(j) = -y(ny-j+(2*ny_stretch)+2)
+               end do
+            end if
+            
             ! z is always uniform
             do k=1,nz+1
                z(k) = real(k-1,WP)/real(nz,WP)*Lz-0.5_WP*Lz
             end do
 
-            if(amROOT)then
+            if(amRoot)then
                print*, "======== MESH DESCRIPTION IN x ========"
+               print*, "Uniform region length: ", Lx
                print*, "Number of cells in the uniform region: ", nx
-               print*, "Number of cells added to domain: ", nx_stretching
-               print*, "Total number of cells in domain: ", nx+nx_stretching
-               print*, "New domain length with extension is: ", x(nx+1+nx_stretching)
-               print*, "Stretching ratio in x: ", stretching
+               print*, "Number of cells added to left of domain: ", nx_stretchL
+               print*, "Number of cells added to left of domain: ", nx_stretchR
+               print*, "Total number of cells in domain: ", nx+nx_stretchL+nx_stretchR
+               print*, "Stretching ratio in x: ", alpha
+               print*, "Leftmost point (stretched region left): ", x(1)
+               print*, "Start of uniform region: ", start_ref
+               print*, "End of uniform region: ",x(nx+nx_stretchL+1)
+               print*, "Rightmost point (stretched region right): ", x(nx_stretchL+nx+nx_stretchR+1)
+               print*, "Aspect ratio: ", dx/dy
+               print*, "Number of cells per droplet diameter: ", nx*(ddrop/Lx)
                print*, "======================================="             
             end if
 
@@ -319,17 +150,15 @@ contains
                print*, "======== MESH DESCRIPTION IN y ========"
                print*, 'Uniform region height: ', Ly
                print*, 'Stretching in y starts at: +- ', Ly/2
-               print*, 'Number of cells added to the top: ', ny_stretch
-               print*, 'Number of cells added to the top: ', ny_stretch
-               print*, 'Stretching ratio: ', stretching
-               print*, 'Aspect ratio in uniform region (dx/dy): ',dx/dy 
-               print*, "========================================="                 
+               print*, 'Number of cells added to the top and to the bottom: ', ny_stretch/2
+               print*, 'Stretching ratio in y: ', alpha
+               print*, "Aspect ratio: ", dx/dy
+               print*, "Number of cells per droplet diameter: ", ny*(ddrop/Ly)
+               print*, "========================================"                 
             end if
 
             ! General serial grid object
             grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='ShockDrop')
-
-        end if
 
       end block create_grid
 

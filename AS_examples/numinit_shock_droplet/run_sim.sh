@@ -6,22 +6,26 @@ rm -rf singlephase_log.out multiphase_log.out
 rm -rf *.dat
 rm -rf log.out
 
-#reset extraction flag
+#reset extraction flag so that singlephase sim will run
 echo "BASH - Reset extraction flag."
 sed -i 's/Profile extraction flag: false/Profile extraction flag: true/' input
 
+#reset multiphase timestep size so that it can be replaced to match final timestep of singlephase sim
 echo "BASH - Reset multiphase max timestep size."
 sed -i '/Multiphase max timestep size:/ s/:.*$/: @replace@/' input
 
+#source config to set envoirnment variables
 echo "BASH - Sourcing config.sh file."
 source config.sh
 
 #run singlephase simulation
 echo "BASH - Running singlephase simulation in serial."
+
 #update processors for singlephase serial simulation
 sed -i '/Partition :/ s/:.*$/: 1 1 1/' input
 mpiexec -n 1 ./nga.dp.gnu.opt.mpi.exe -i ${file_in} -v 2 > ${singlephase_file_out} 
 
+#update extraction flag so that the multiphase sim runs
 sed -i 's/Profile extraction flag: true/Profile extraction flag: false/' input
 
 #update timestep in input file

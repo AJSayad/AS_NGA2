@@ -47,7 +47,6 @@ Max timestep size : 3.82e-7
 Multiphase max timestep size: 3.82000E-07
 Max cfl number :    0.5
 Max time :     	    1e-4
-# To look at breakup, use tmax = 2.9e-3
 Max steps :	  1000000
 
 # Pressure solver

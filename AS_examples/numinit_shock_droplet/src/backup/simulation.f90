@@ -4,7 +4,7 @@ module simulation
    use geometry,          only: cfg
    use mast_class,        only: mast
    use vfs_class,         only: vfs
-   use matm_class,        only: matm,water 
+   use matm_class,        only: matm
    use timetracker_class, only: timetracker
    use ensight_class,     only: ensight
    use surfmesh_class,    only: surfmesh
@@ -24,9 +24,9 @@ module simulation
    type(hypre_str),   public :: vs
 
    !> Ensight postprocessing
-   type(surfmesh) :: smesh !AS   
-   type(ensight) :: ens_out
-   type(event)   :: ens_evt
+   type(surfmesh) :: smesh
+   type(ensight) :: ens_out, ens_out_smesh 
+   type(event)   :: ens_evt, ens_evt_smesh 
 
    !> Simulation monitor file
    type(monitor) :: mfile,cflfile,cvgfile
@@ -40,13 +40,13 @@ module simulation
    real(WP) :: xshock,vshock,relshockvel
    real(WP) :: Grho0, GP0, Grho1, GP1, ST, Ma1, Ma, Lrho0, LP0, Mas, gamm_g
 
-   !AS variables for shock extraction
+   ! AS variables for shock extraction
    logical :: extract_flag
-   integer :: final_xshock_index, n_shock
-   real(WP) :: tshock,time_tol,final_xshock
-   
+   integer :: n_shock
+   real(WP) :: tshock,final_xshock,delta,start_xshock
+
 contains
-  
+
    !> Function that localizes the left (x-) of the domain
    function left_of_domain(pg,i,j,k) result(isIn)
      use pgrid_class, only: pgrid
@@ -92,38 +92,41 @@ contains
       use param, only: param_read
       implicit none
 
-      !AS if extraction flag is true --> run singlephase
+      !AS if extraction flag is true --> run singlephase and then multiphase
       call param_read('Profile extraction flag',extract_flag)
 
       ! Initialize time tracker with 2 subiterations
-      initialize_timetracker: block       
+      initialize_timetracker: block
          time=timetracker(amRoot=cfg%amRoot)
          call param_read('Max timestep size',time%dtmax)
          call param_read('Max cfl number',time%cflmax)
 
          if (extract_flag.eqv.(.true.)) then !AS singlephase simulation
-            call param_read('Shock location',xshock)
+            call param_read('Single phase shock location',start_xshock)
             call param_read('Gas gamma',gamm_g)
-            call param_read('Final shock location',final_xshock)
+            call param_read('Final shock location',final_xshock) !final singlephase shock location
             call param_read('Pre-shock density',Grho0,default=1.204_WP)
             call param_read('Pre-shock pressure',GP0,default=1.01325e5_WP)
             call param_read('Mach number of shock',Ma,default=1.47_WP)
-            
-            !AS added use shock relations to get post shock numbers
+
+            !use shock relations to get post shock numbers
             GP1 = GP0 * (2.0_WP*gamm_g*Ma**2 - (gamm_g-1.0_WP)) / (gamm_g+1.0_WP)
             Grho1 = Grho0 * (Ma**2 * (gamm_g+1.0_WP) / ((gamm_g-1.0_WP)*Ma**2 + 2.0_WP))
             Ma1 = sqrt(((gamm_g-1.0_WP)*(Ma**2)+2.0_WP)/(2.0_WP*gamm_g*(Ma**2)-(gamm_g-1.0_WP)))
             vshock = -Ma1 * sqrt(gamm_g*GP1/Grho1) + Ma*sqrt(gamm_g*GP0/Grho0)
             relshockvel = -Grho1*vshock/(Grho0-Grho1)
-            time%tmax = (final_xshock - xshock) / relshockvel;
+
+            time%tmax = (final_xshock - start_xshock) / relshockvel !calculate final singlephase time based on final shock position
             print*, "Singlephase ending time: ", time%tmax
-            
+
          else if (extract_flag.eqv.(.false.)) then !AS multiphase simulation with extracted shock profile
             call param_read('Max time',time%tmax)
             call param_read('Multiphase max timestep size',time%dtmax)
-            print*, "Multiphase ending time: ", time%tmax
+            if (cfg%amRoot)then
+               print*, "Multiphase ending time: ", time%tmax
+            end if
          end if
-         
+
          call param_read('Max steps',time%nmax)
          time%dt=time%dtmax
          time%itmax=2
@@ -132,18 +135,23 @@ contains
       ! Initialize our VOF solver and field
       create_and_initialize_vof: block
          use mms_geom, only: cube_refine_vol
-         use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo
+         use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux !AS added plicnet, flux
          integer :: i,j,k,n,si,sj,sk
          real(WP), dimension(3,8) :: cube_vertex
          real(WP), dimension(3) :: v_cent,a_cent
          real(WP) :: vol,area
          integer, parameter :: amr_ref_lvl=4
+
          ! Create a VOF solver with lvira reconstruction
          call vf%initialize(cfg=cfg,reconstruction_method=lvira,name='VOF')
+
+         ! Create a VOF solver with plicnet reconstruction with flux transport method
+         !call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF') !AS
+
          ! Initialize liquid at left
-         if (extract_flag.eqv.(.true.)) then !AS
+         if (extract_flag.eqv.(.true.)) then !AS if singlephase, set drop diameter to 0.0
             ddrop = 0.0_WP
-         else if (extract_flag.eqv.(.false.)) then
+         else if (extract_flag.eqv.(.false.)) then !AS otherwise, initialize droplet based on diameter
             call param_read('Droplet diameter',ddrop)
             call param_read('Droplet location',dctr)
             do k=vf%cfg%kmino_,vf%cfg%kmaxo_
@@ -169,7 +177,7 @@ contains
                      if (vf%VF(i,j,k).ge.VFlo.and.vf%VF(i,j,k).le.VFhi) then
                         vf%Lbary(:,i,j,k)=v_cent
                         vf%Gbary(:,i,j,k)=([vf%cfg%xm(i),vf%cfg%ym(j),vf%cfg%zm(k)]-vf%VF(i,j,k)*vf%Lbary(:,i,j,k))/(1.0_WP-vf%VF(i,j,k))
-                        vf%Gbary(3,i,j,k)=v_cent(3);
+                        if (vf%cfg%nz.eq.1) vf%Gbary(3,i,j,k)=v_cent(3); !AS
                      else
                         vf%Lbary(:,i,j,k)=[vf%cfg%xm(i),vf%cfg%ym(j),vf%cfg%zm(k)]
                         vf%Gbary(:,i,j,k)=[vf%cfg%xm(i),vf%cfg%ym(j),vf%cfg%zm(k)]
@@ -198,63 +206,117 @@ contains
          call vf%reset_volume_moments()
       end block create_and_initialize_vof
 
-
       ! Create a compressible two-phase flow solver
       create_and_initialize_flow_solver: block
-         use mast_class, only: clipped_neumann,dirichlet,bc_scope,bcond,mech_egy_mech_hhz
+         use mast_class,      only: clipped_neumann,dirichlet,bc_scope,bcond,mech_egy_mech_hhz
          use hypre_str_class, only: pcg_pfmg
-         use mathtools,  only: Pi
-         use parallel,   only: amRoot
-         use messager,    only: die
+         use mathtools,       only: Pi
+         use parallel,        only: amRoot
+         use messager,        only: die
+         use param,           only: param_read, param_exists
 
-         integer :: i,j,k,n
+         integer :: i,j,k,n,nx
          real(WP), dimension(3) :: xyz
-         real(WP) :: gamm_l,Pref_l,gamm_g,visc_l,visc_g,Pref
-         real(WP) :: hdff_g, hdff_l
-         real(WP) :: xshock,vshock,relshockvel
+         real(WP) :: gamm_l,Pref_l,gamm_g,visc_l,visc_g,Pref,cv_l0,cv_g0,kappa_l,kappa_g
+         real(WP) :: xshock,vshock,relshockvel,Lx
          real(WP) :: Grho0, GP0, Grho1, GP1, ST, Ma1, Ma, Lrho0, LP0, Mas
          type(bcond), pointer :: mybc
 
          !AS variables for shock extraction
-         integer :: shock_index, n_shock
-         real(WP) :: final_xshock,shock_index_loc
-         
+         integer :: n_shock,q,shock_index
+         real(WP) :: final_xshock,delta, dx,tol,shock_loc
+
          !AS variables for reading in shock profile
-         real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, Ui_profile
-         real(WP) :: profile_left, profile_right
-         
+         real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, Ui_profile, GP_profile
+
+         !AS set up for shock profile
+         call param_read('n_shock',n_shock) !AS number of points to the left and right of shock for profile
+
+         ! Initialize conditions
+         if (extract_flag.eqv.(.true.)) then !AS singlephase simulation
+            call param_read('Single phase shock location',start_xshock); print*,"start_xshock", start_xshock !singlephase shock starting location
+            call param_read('Final shock location',final_xshock) !final shock location
+            ddrop = 0.0_WP !set to singelphase
+         else if (extract_flag.eqv.(.false.)) then !AS multiphase simulation
+            call param_read('Shock location',xshock)
+            call param_read('Droplet diameter',ddrop) !set to multiphase
+
+            !allocate profile arrays
+            allocate(Grho_profile(2*n_shock+1))
+            allocate(GrhoE_profile(2*n_shock+1))
+            allocate(Ui_profile(2*n_shock+1))
+            allocate(GP_profile(2*n_shock+1))
+
+            !AS read in singlephase profile data and store in variables
+            open(unit=1, file='Grho_profile.dat')
+            read(1,*) Grho_profile
+            close(1)
+
+            open(unit=2, file='GrhoE_profile.dat')
+            read(2,*) GrhoE_profile
+            close(2)
+
+            open(unit=3, file='Ui_profile.dat')
+            read(3,*) Ui_profile
+            close(3)
+
+            open(unit=4, file='GP_profile.dat')
+            read(4,*) GP_profile
+            close(4)
+
+         end if
+
+         call param_read('Lx',Lx); call param_read('nx',nx)
+
+         dx = Lx/nx ! mesh spacing in uniform region
+         tol = dx/2 ! AS set tolerance for reading in shock profile 
+         delta = 2*dx*n_shock !AS shock thickness
+         if (amRoot) then
+            print*, "Total shock profile points: ", 2*n_shock
+            print*, "Shock thickness: ", delta
+         end if
+
          ! Create material model class
          matmod=matm(cfg=cfg,name='Liquid-gas models')
+
          ! Get EOS parameters from input
          call param_read('Liquid Pref', Pref_l)
          call param_read('Liquid gamma',gamm_l)
          call param_read('Gas gamma',gamm_g)
+
          ! Register equations of state
          call matmod%register_stiffenedgas('liquid',gamm_l,Pref_l)
          call matmod%register_idealgas('gas',gamm_g)
+
          ! Create flow solver
          fs=mast(cfg=cfg,name='Two-phase All-Mach',vf=vf)
 
-         !AS added: assign viscosity and (eventually) heat diffusion to each phase
          call param_read('Liquid dynamic viscosity',visc_l)
          call param_read('Gas dynamic viscosity',visc_g)
-         call param_read('Liquid thermal conductivity',hdff_l)
-         call param_read('Gas thermal conductivity',hdff_g)
+         call param_read('Liquid thermal conductivity',kappa_l)
+         call param_read('Gas thermal conductivity',kappa_g)
+         call param_read('Liquid specific heat (constant vol)',cv_l0)
+         call param_read('Gas specific heat (constant vol)',cv_g0)
+
          ! Register flow solver variables with material models
          call matmod%register_thermoflow_variables('liquid',fs%Lrho,fs%Ui,fs%Vi,fs%Wi,fs%LrhoE,fs%LP)
          call matmod%register_thermoflow_variables('gas'   ,fs%Grho,fs%Ui,fs%Vi,fs%Wi,fs%GrhoE,fs%GP)
-         call matmod%register_diffusion_thermo_models(viscconst_gas=visc_g, viscmodel_liquid=water,sphtmodel_liquid=water)
+         call matmod%register_diffusion_thermo_models(viscconst_gas=visc_g, viscconst_liquid=visc_l,hdffconst_gas=kappa_g, hdffconst_liquid=kappa_l,sphtconst_gas=cv_g0,sphtconst_liquid=cv_l0)
+
          ! Read in surface tension coefficient
          call param_read('Surface tension coefficient',fs%sigma)
+
          ! Configure pressure solver
          ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg,nst=7)
          ps%maxlevel=10
          call param_read('Pressure iteration',ps%maxit)
          call param_read('Pressure tolerance',ps%rcvg)
+
          ! Configure implicit velocity solver
          vs=hypre_str(cfg=cfg,name='Velocity',method=pcg_pfmg,nst=7)
          call param_read('Implicit iteration',vs%maxit)
          call param_read('Implicit tolerance',vs%rcvg)
+
          ! Setup the solver
          call fs%setup(pressure_solver=ps,implicit_solver=vs)
 
@@ -263,106 +325,89 @@ contains
          call param_read('Pre-shock density',Grho0,default=1.204_WP)
          call param_read('Pre-shock pressure',GP0,default=1.01325e5_WP)
          call param_read('Mach number of shock',Ma,default=1.47_WP)
+
          ! Initially 0 velocity in y and z
          fs%Vi = 0.0_WP; fs%Wi = 0.0_WP
+
          ! Zero face velocities as well for the sake of dirichlet boundaries
          fs%V = 0.0_WP; fs%W = 0.0_WP
 
-         ! Initialize conditions
-         call param_read('Shock location',xshock)
-         !AS use shock relations to get post shock numbers
+         !use shock relations to get post shock numbers
          GP1 = GP0 * (2.0_WP*gamm_g*Ma**2 - (gamm_g-1.0_WP)) / (gamm_g+1.0_WP)
          Grho1 = Grho0 * (Ma**2 * (gamm_g+1.0_WP) / ((gamm_g-1.0_WP)*Ma**2 + 2.0_WP))
-         !AS calculate post shock Mach number (mach number of gas behind shock)
+
+         !calculate post shock Mach number (mach number of gas behind shock)
          Ma1 = sqrt(((gamm_g-1.0_WP)*(Ma**2)+2.0_WP)/(2.0_WP*gamm_g*(Ma**2)-(gamm_g-1.0_WP)))
-         !AS calculate post shock velocity (velocity of the gas behind the shock)
+
+         !calculate post shock velocity (velocity of the gas behind the shock)
          vshock = -Ma1 * sqrt(gamm_g*GP1/Grho1) + Ma*sqrt(gamm_g*GP0/Grho0)
-         !AS velocity at which the shock moves
+
+         !velocity at which the shock moves
          relshockvel = -Grho1*vshock/(Grho0-Grho1)
 
-        if (amRoot) then
-           print*,"===== Problem Setup Description ====="
-           print*,'Mach number', Ma
-           print*,'Pre-shock:  Density',Grho0,'Pressure',GP0
-           print*,'Post-shock: Density',Grho1,'Pressure',GP1,'Gas Velocity',vshock
-           print*,'Shock velocity', relshockvel
-        end if
-        
-        call param_read('n_shock',n_shock) !number of points to left and right of shock for profile extraction
+         if (amRoot) then
+            print*,"===== Problem Setup Description ====="
+            print*,'Mach number', Ma
+            print*,'Pre-shock:  Density',Grho0,'Pressure',GP0
+            print*,'Post-shock: Density',Grho1,'Pressure',GP1,'Gas Velocity',vshock
+            print*,'Shock velocity', relshockvel
+         end if
 
-        if (extract_flag.eqv.(.true.)) then !AS singlephase simulation
-           call param_read('Final shock location',final_xshock) !final shock location
-           ddrop = 0.0_WP
-        else if (extract_flag.eqv.(.false.)) then
-           call param_read('Droplet diameter',ddrop)
-           allocate(Grho_profile(2*n_shock))
-           allocate(GrhoE_profile(2*n_shock))
-           allocate(Ui_profile(2*n_shock))
-           
-           !AS read in singlephase profile data
-           open(unit=1, file='Grho_profile.dat') 
-           read(1,*) Grho_profile
-           close(1)
+         q = 1 ! AS initialize counter for reading in shock profile values
+         ! Initialize gas phase quantities
+         if (extract_flag.eqv.(.true.))then
+            !singlephase initialization
+            do  i=fs%cfg%imino_,fs%cfg%imaxo_
+               if (cfg%xm(i).lt.start_xshock) then !AS post shock values
+                  fs%Grho(i,:,:) = Grho1
+                  fs%Ui(i,:,:) = vshock
+                  fs%GP(i,:,:) = GP1
+                  fs%GrhoE(i,:,:) = matmod%EOS_energy(GP1,Grho1,vshock,0.0_WP,0.0_WP,'gas')
+               else !AS pre shock values
+                  fs%Grho(i,:,:) = Grho0
+                  fs%Ui(i,:,:) = 0.0_WP
+                  fs%GP(i,:,:) = GP0
+                  fs%GrhoE(i,:,:) = matmod%EOS_energy(GP0,Grho0,0.0_WP,0.0_WP,0.0_WP,'gas')
+               end if
+            end do
 
-           open(unit=2, file='GrhoE_profile.dat')
-           read(2,*) GrhoE_profile
-           close(2)
+         else
+            !multiphase numerical initialization
+            do i=fs%cfg%imino_,fs%cfg%imaxo_
+               if (cfg%xm(i).le.xshock) then
+                  fs%Grho(i,:,:) = Grho1
+                  fs%Ui(i,:,:) = vshock
+                  fs%GP(i,:,:) = GP1
+                  fs%GrhoE(i,:,:) = matmod%EOS_energy(GP1,Grho1,vshock,0.0_WP,0.0_WP,'gas')
+               elseif (cfg%xm(i).ge.xshock) then
+                  fs%Grho(i,:,:) = Grho0
+                  fs%Ui(i,:,:) = 0.0_WP
+                  fs%GP(i,:,:) = GP0
+                  fs%GrhoE(i,:,:) = matmod%EOS_energy(GP0,Grho0,0.0_WP,0.0_WP,0.0_WP,'gas')
+               end if
+            end do
 
-           open(unit=3, file='Ui_profile.dat')
-           read(3,*) Ui_profile
-           close(3)
-        end if
-        
-        ! Initialize gas phase quantities
-        do i=fs%cfg%imino_,fs%cfg%imaxo_
-           ! pressure, velocity, use matmod for energy
-           if (fs%cfg%x(i).lt.xshock) then 
-             fs%Grho(i,:,:) = Grho1
-             fs%Ui(i,:,:) = vshock
-             fs%GP(i,:,:) = GP1
-             fs%GrhoE(i,:,:) = matmod%EOS_energy(GP1,Grho1,vshock,0.0_WP,0.0_WP,'gas')
-           else
-             fs%Grho(i,:,:) = Grho0
-             fs%Ui(i,:,:) = 0.0_WP
-             fs%GP(i,:,:) = GP0
-             fs%GrhoE(i,:,:) = matmod%EOS_energy(GP0,Grho0,0.0_WP,0.0_WP,0.0_WP,'gas')
-           end if
-        end do
+            ! find shock index
+            do i=cfg%imino_,cfg%imaxo_
+               if ((cfg%xm(i).lt.(xshock+tol)).and.(cfg%xm(i).gt.(xshock-tol))) then
+                  print*, "The shock has been found at index: ", i
+                  shock_index=i
+                  print*, "stored shock index", shock_index
+                  shock_loc = cfg%xm(shock_index) ! store location of shock corresponding to index
+                  print*, "The found shock location (cell center) is: ", shock_loc
+               end if
+            end do
 
-        !AS read in shock profile
-        if (extract_flag.eqv.(.false.)) then
-           if ((cfg%x(cfg%imino_).le.xshock) .and. (xshock).le.cfg%x(cfg%imaxo_)) then
-              do i=cfg%imino_,cfg%imaxo_ !find xshock index
-                 if (((cfg%x(i)-xshock).ge.0.0_WP) .and. ((cfg%x(i)-xshock).lt.cfg%dx(i))) then
-                     shock_index = i-2
-                     print*, 'shock index: ', shock_index
-                     shock_index_loc = cfg%x(shock_index)
-                     print*, 'shock location: ', shock_index_loc
-                     !AS calculate the left and right extents of the shock profile
-                     profile_left = shock_index_loc - cfg%dx(i)*n_shock
-                     print*, 'Shock profile left side: ', profile_left
-                     profile_right = shock_index_loc + cfg%dx(i)*n_shock
-                     print*, 'Shock profile right isde: ', profile_right
-                 end if
-              end do
-              do i=cfg%imin_,cfg%imax_ !AS index over each subdomain without overlapping nodes
-                  if ((cfg%x(cfg%imin_).gt.profile_left).or.(cfg%x(cfg%imax_).lt.profile_right))then !check to see if profile is in 2 subdomains
-                     print*, 'x(imin_) = ', cfg%x(cfg%imin_)
-                     print*, 'x(imax_) = ', cfg%x(cfg%imax_)                   
-                     call die("[simulation line: 358] shock profile falls within multiple domains.") 
-                  else
-                     print*, '***shock falls within 1 subdomain --> running simulation.***'
-                     if (i.ge.(shock_index - n_shock) .and. i.lt.(shock_index + n_shock)) then
-                        fs%Grho(i,:,:) = Grho_profile(i - (shock_index - n_shock) + 1)
-                        fs%GrhoE(i,:,:) = GrhoE_profile(i - (shock_index - n_shock) + 1)
-                        fs%Ui(i,:,:) = Ui_profile(i - (shock_index - n_shock) + 1)
-                     end if
-                 end if
-              end do
-           end if
-           deallocate(Grho_profile, GrhoE_profile, Ui_profile) !deallocate profile arrays 
-        end if
-
+            do i=cfg%imino_,cfg%imaxo_ ! read in shock profile
+               if ((cfg%xm(i).le.cfg%xm(shock_index+n_shock)).and.(cfg%xm(i).ge.cfg%xm(shock_index-n_shock)))then
+                  fs%Grho(i,:,:) = Grho_profile(i+n_shock-shock_index+1)
+                  fs%GP(i,:,:) = GP_profile(i+n_shock-shock_index+1)
+                  fs%GrhoE(i,:,:) = GrhoE_profile(i+n_shock-shock_index+1)
+                  fs%Ui(i,:,:) = Ui_profile(i+n_shock-shock_index+1)
+               end if
+            end do
+         end if
+         
          ! Calculate liquid pressure
          if (fs%cfg%nz.eq.1) then
             ! Cylinder configuration, curv = 1/r
@@ -373,8 +418,10 @@ contains
             ! LP0 = Pref + 4.0/ddrop*fs%sigma
             LP0 = GP0 + 4.0/ddrop*fs%sigma
          end if
-         fs%LP = LP0
 
+         !initialize liquid quantities
+         fs%Lrho = Lrho0
+         fs%LP = LP0
          ! Initialize liquid energy, with surface tension
          fs%LrhoE = matmod%EOS_energy(LP0,Lrho0,0.0_WP,0.0_WP,0.0_WP,'liquid')
 
@@ -410,11 +457,28 @@ contains
 
        end block create_and_initialize_flow_solver
 
-       !AS surfmesh object for interface polygon output
+       ! create surfmesh object for interface polygon output
        create_smesh: block
-          smesh=surfmesh(nvar=3,name='smesh')
-          call vf%update_surfmesh(smesh)
-       end block create_smesh       
+         use irl_fortran_interface
+         integer :: i,j,k,nplane,np
+         smesh=surfmesh(nvar=1,name='plic')
+         smesh%varname(1)='curv'
+         call vf%update_surfmesh(smesh)
+         smesh%var(1,:)=0.0_WP
+         np=0;
+         do k=vf%cfg%kmin_,vf%cfg%kmax_
+            do j=vf%cfg%jmin_,vf%cfg%jmax_
+               do i=vf%cfg%imin_,vf%cfg%imax_
+                  do nplane=1,getNumberOfPlanes(vf%liquid_gas_interface(i,j,k))
+                     if (getNumberOfVertices(vf%interface_polygon(nplane,i,j,k)).gt.0) then
+                        np=np+1;
+                        smesh%var(1,np)=vf%curv(i,j,k)
+                     end if
+                  end do
+               end do
+            end do
+         end do
+       end block create_smesh
 
       ! Add Ensight output
       create_ensight: block
@@ -435,17 +499,36 @@ contains
          call ens_out%add_scalar('curvature',vf%curv)
          call ens_out%add_scalar('Mach',fs%Mach)
          call ens_out%add_scalar('fvf',cfg%VF)!AS
-         call ens_out%add_scalar('T',fs%Tmptr) !AS
+         call ens_out%add_scalar('Tmptr',fs%Tmptr) !AS
          call ens_out%add_scalar('SL_x',fs%sl_x) !AS
          call ens_out%add_scalar('SL_y',fs%sl_y) !AS
          call ens_out%add_scalar('SL_z',fs%sl_z) !AS
          call ens_out%add_scalar('LP',fs%LP) !AS
+         call ens_out%add_scalar('GP',fs%GP) !AS
          call ens_out%add_scalar('LrhoE',fs%LrhoE) !AS
          call ens_out%add_scalar('GrhoE',fs%GrhoE) !AS
-         call ens_out%add_surface('smesh',smesh) !AS         
          ! Output to ensight
          if (ens_evt%occurs()) call ens_out%write_data(time%t)
-      end block create_ensight
+       end block create_ensight
+
+       !AS block for writing smesh data more frequently than field variables
+       create_ensight_smesh: block
+         real(WP) :: smesh_tper ! declare variable for smesh output frequency
+         call param_read('Ensight smesh output period', smesh_tper)
+
+         ! create ensight output from cfg for smesh surface reconstruction
+         ens_out_smesh=ensight(cfg=cfg,name='droplet_smesh')
+
+         ! create event for ensight output
+         ens_evt_smesh=event(time=time,name='Ensight output smesh')
+         ens_evt_smesh%tper = smesh_tper
+
+         ! add variables to output
+         call ens_out_smesh%add_surface('smesh',smesh)
+
+         ! output to ensight
+         if (ens_evt_smesh%occurs()) call ens_out_smesh%write_data(time%t)
+       end block create_ensight_smesh
 
       ! Create a monitor file
       create_monitor: block
@@ -480,7 +563,7 @@ contains
          call cflfile%add_column(fs%CFLv_z,'Viscous zCFL')
          call cflfile%add_column(fs%CFLa_x,'Acoustic xCFL')
          call cflfile%add_column(fs%CFLa_y,'Acoustic yCFL')
-         call cflfile%add_column(fs%CFLa_z,'Acoustic zCFL')         
+         call cflfile%add_column(fs%CFLa_z,'Acoustic zCFL')
          call cflfile%write()
          ! Create convergence monitor
          cvgfile=monitor(fs%cfg%amRoot,'cvg')
@@ -498,7 +581,7 @@ contains
       end block create_monitor
 
    end subroutine simulation_init
-  
+
    !> Perform an NGA2 simulation - this mimicks NGA's old time integration for multiphase
    subroutine simulation_run
       use messager, only: die
@@ -566,12 +649,40 @@ contains
          call fs%pressure_relax(vf,matmod,relax_model)
 
          ! Output to ensight
-         !if (ens_evt%occurs()) call ens_out%write_data(time%t)
-         if (ens_evt%occurs()) then !AS output to ensight
-            call vf%update_surfmesh(smesh)
+         if (ens_evt%occurs()) then
+
+            !update surfmesh object
+            update_smesh: block
+              use irl_fortran_interface
+              integer :: i,j,k,nplane,np
+              ! Transfer polygons to smesh
+              call vf%update_surfmesh(smesh)
+              ! Also populate nplane variable
+              smesh%var(1,:)=0.0_WP
+              np=0
+              do k=vf%cfg%kmin_,vf%cfg%kmax_
+                 do j=vf%cfg%jmin_,vf%cfg%jmax_
+                    do i=vf%cfg%imin_,vf%cfg%imax_
+                       do nplane=1,getNumberOfPlanes(vf%liquid_gas_interface(i,j,k))
+                          if (getNumberOfVertices(vf%interface_polygon(nplane,i,j,k)).gt.0) then
+                             np=np+1;
+                             smesh%var(1,np)=vf%curv(i,j,k)
+                          end if
+                       end do
+                    end do
+                 end do
+              end do
+            end block update_smesh
+
+            !AS write data
             call ens_out%write_data(time%t)
+
          end if
-         
+
+         if (ens_evt_smesh%occurs()) then
+            call ens_out_smesh%write_data(time%t)
+         end if
+
          ! Perform and output monitoring
          call fs%get_max()
          call vf%get_max()
@@ -587,44 +698,48 @@ contains
    subroutine simulation_final
      use param, only: param_read
      use parallel,   only: amRoot
-     implicit none   
-     integer :: i, j,shock_index,n_shock
-     real(WP) :: shock_index_loc, upper_shock_tol, lower_shock_tol
+     implicit none
+     integer :: i,j,shock_index,n_shock, nx
+     real(WP) :: final_xshock, delta, start_ref,Lx
+     real(WP) :: tol ! AS tolerance for finding final shock location in singlephase
 
+     call param_read('nx',nx)
+     call param_read('Lx',Lx);  call param_read('Lx ref',start_ref);
      call param_read('n_shock',n_shock)
+     call param_read('Final shock location',final_xshock)
+     call param_read('Lx ref', start_ref, default=0.0_WP);
+     
+     delta = 2*cfg%dx(1)*n_shock !shock thickness
+     tol = (Lx - start_ref)/nx ! set the tolerance to the mesh spacing in the uniform region
      
      if (extract_flag.eqv.(.true.)) then
         !set up shock profile data files
         open(1, file='Grho_profile.dat')
         open(2, file='GrhoE_profile.dat')
         open(3, file='Ui_profile.dat')
+        open(4, file='GP_profile.dat')
 
-        !AS find shock index
-        if ((fs%cfg%x(fs%cfg%imin_) .le. final_xshock) .and. (final_xshock).le.fs%cfg%x(fs%cfg%imax_)) then
-           upper_shock_tol = 1e-3
-           lower_shock_tol = 1e-4
-           do i=fs%cfg%imino_,fs%cfg%imaxo_
-              if (((fs%cfg%x(i)-final_xshock).gt.lower_shock_tol) .and. ((fs%cfg%x(i)-final_xshock).lt.upper_shock_tol)) then
-                 shock_index = i-2 !this finds the center of the shock --> 2 determined by trial and error
-                 shock_index_loc = fs%cfg%x(shock_index)
-                 print*, "shock index: ", shock_index
-                 print*, "shock center location", shock_index_loc
-              end if
-           end do
-        end if
-
-        !AS write shock profile to data files 
-        do i=fs%cfg%imin,fs%cfg%imax !AS this part is run in serial --> use global indices for simplicity
-           if ((i.ge.shock_index - n_shock) .and. (i.le.shock_index + n_shock)) then
-                 print*, 'i value is: ',i
-                 print*, 'n_shock: ',n_shock
-                 write(1,*) fs%Grho(i,1,1)
-                 write(2,*) fs%GrhoE(i,1,1)
-                 write(3,*) fs%Ui(i,1,1)
+        do i=cfg%imino_,cfg%imaxo_
+           if ((cfg%xm(i).lt.(final_xshock+tol)).and.(cfg%xm(i).gt.(final_xshock-tol))) then
+              print*, "The shock has been found at index: ", i
+              shock_index=i
+              print*, "stored shock index", shock_index
            end if
         end do
-     end if            
-      
+
+        do i=shock_index-n_shock,shock_index+n_shock ! this is now writing 2*n_shock points
+           write(1,*) fs%Grho(i,1,1)
+           write(2,*) fs%GrhoE(i,1,1)
+           write(3,*) fs%Ui(i,1,1)
+           write(4,*) fs%GP(i,1,1)
+        end do
+
+        close(1)
+        close(2)
+        close(3)
+        close(4)
+     end if
+
    end subroutine simulation_final
 
 end module simulation
