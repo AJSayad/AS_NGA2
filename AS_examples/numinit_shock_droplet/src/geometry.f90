@@ -25,40 +25,39 @@ contains
          use sgrid_class, only: cartesian
          integer :: i,j,k,nx,ny,nz
          real(WP) :: ddrop, dx
-         !real(WP) :: Lcalc,r,rold,err,tol
          real(WP) :: Lx,Ly,Lz
          real(WP), dimension(:), allocatable :: x,y,z
 
-         !AS variables for stretching in x
+         ! variables for stretching in x
          integer ::  nx_stretchL,nx_stretchR
          real(WP) :: dx_old,alpha,dx_ref,start_ref
 
-         !AS variables for stretching in y
+         ! variables for stretching in y
          real(WP) :: y_box1,dy,dy_old,dy_stretch,Ly_ref
          integer ::  ny_stretch
          
-         !AS variable for shock profile extraction
-         logical :: extract_flag !AS
+         ! variable for shock profile extraction
+         logical :: extract_flag
 
-         call param_read('Profile extraction flag',extract_flag) !AS
+         call param_read('Profile extraction flag',extract_flag)
+         
          ! Read in grid definition
          call param_read('Lx',Lx); call param_read('Lx ref', start_ref, default=0.0_WP);
-         !print *, "START REF: ",start_ref
+         
          call param_read('nx',nx); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
-
          allocate(x(nx+nx_stretchL+nx_stretchR+1));
 
          dx = Lx/nx
          dx_ref = (Lx - start_ref)/real(nx,WP)
 
-         !AS if profile is being extracted, run the simulation in 1D
+         ! if profile is being extracted, run the simulation in 1D
          if (extract_flag.eqv.(.true.)) then
             call param_read('Ly',Ly);
             ny = 1 !if singlephase, run in 1D
             allocate(y(ny+1))
-         else if (extract_flag.eqv.(.false.)) then !if the multiphase sim is running, run the sim in 2D, include mesh streching
-            !call param_read('ny',ny); allocate(y(ny+1))
-            call param_read('Ly',Ly); call param_read('ny',ny); call param_read('ny stretch',ny_stretch); allocate(y(ny+2*ny_stretch+1)) !AS
+         else if (extract_flag.eqv.(.false.)) then !if multiphase, run the sim in 2D
+            call param_read('Ly',Ly); call param_read('ny',ny); call param_read('ny stretch',ny_stretch);
+            allocate(y(ny+2*ny_stretch+1))
          end if
 
          call param_read('nz',nz,default=1); allocate(z(nz+1))
@@ -71,7 +70,7 @@ contains
          ! Read in droplet information
          call param_read('Droplet diameter',ddrop)
          
-            !AS uniform mesh region
+            !uniform mesh x
             alpha=1.05_WP
             do i=nx_stretchL+1,nx+nx_stretchL+1
                x(i) = start_ref + real(i-1-nx_stretchL,WP)*dx_ref
@@ -86,24 +85,23 @@ contains
             ! stretch right of domain
             do i=nx+nx_stretchL+2,nx+nx_stretchL+nx_stretchR+1
                dx_old = x(i-1)-x(i-2)
-               x(i) = x(i-1)+dx_old*alpha !location of new point, this is the distance plus the distance from the previously defined point
-               !for a uniform mesh it would be x(i) = x(i-1)+dx
+               x(i) = x(i-1)+dx_old*alpha 
             end do
 
-           !AS mesh in y
+            ! mesh in y
             if (extract_flag.eqv.(.true.)) then
                ! uniform 1 cell mesh in y for 1D sim
                do j=1,ny+1
-                  ny_stretch = 0 !1D
+                  ny_stretch = 0 ! 1D
                   dy = Ly/ny
                   y(j) = real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
                end do
             else
                do j=1,ny+2*ny_stretch+1 !initialize y mesh array
-                  y(j) = 0.0_WP !real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
+                  y(j) = 0.0_WP
                end do
 
-               dy = Ly/ny !define uniform grid spacing
+               dy = Ly/ny ! define uniform grid spacing
                y(ny/2+ny_stretch+1) = 0.0_WP !define the centerline of the domain
 
                !y array uniform region
