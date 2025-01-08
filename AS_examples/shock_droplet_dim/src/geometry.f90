@@ -12,7 +12,6 @@ module geometry
 
 contains
 
-
    !> Initialization of problem geometry
    subroutine geometry_init
       use sgrid_class, only: sgrid
@@ -21,7 +20,6 @@ contains
       use messager,    only: die
       implicit none
       type(sgrid) :: grid
-
 
       ! Create a grid from input params
       create_grid: block
@@ -34,24 +32,25 @@ contains
          real(WP) :: Lx,Ly,Lz
          real(WP), dimension(:), allocatable :: x,y,z
 
-         integer :: nx_stretching !AS
-         real(WP) :: dx_new, stretching !AS
+         integer :: nx_stretching 
+         real(WP) :: dx_new, stretching
 
          ! Read in grid definition
-         call param_read('Lx',Lx); !AS call param_read('nx',nx); allocate(x(nx+1)) !allocates x to be one larger than nx - original !
-         call param_read('nx',nx); call param_read('nx stretch',nx_stretching); allocate(x(nx+nx_stretching+1)) !AS allocates x to be 1 larger than the extended nx
+         call param_read('Lx',Lx);
+         call param_read('nx',nx); call param_read('nx stretch',nx_stretching); allocate(x(nx+nx_stretching+1))
 
          ! Read in grid definition
-         !call param_read('Lx',Lx); call param_read('nx',nx); allocate(x(nx+1))
          dx = Lx/nx
          call param_read('Ly',Ly); call param_read('ny',ny); allocate(y(ny+1))
          call param_read('nz',nz,default=1); allocate(z(nz+1))
 
          if (nz.eq.1) then
-           Lz = dx
+            Lz = dx
          else
-           call param_read('Lz',Lz)
+            call param_read('Lz',Lz)
+            call param_read('nz',nz,default=1)
          end if
+        
          ! Read in droplet information
          call param_read('Droplet diameter',ddrop)
          call param_read('Droplet location',dctr)
@@ -241,14 +240,14 @@ contains
            end if
 
          else
-           ! Uniform grid
-           do i=1,nx+1
-              x(i) = real(i-1,WP)*dx
-           end do
+            ! Uniform grid
+            do i=1,nx+1
+               x(i) = real(i-1,WP)*dx
+            end do
 
-           do j=1,ny+1
-             y(j) = real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
-           end do
+            do j=1,ny+1
+               y(j) = real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
+            end do
          end if
 
          ! z is always uniform
@@ -256,23 +255,20 @@ contains
             z(k) = real(k-1,WP)/real(nz,WP)*Lz-0.5_WP*Lz
          end do
 
-        !AS block to add domain extension based on nx_stretching --> number of nodes to add to the domain
-          stretching = 1.1_WP
-          do i=nx+2, nx+1+nx_stretching
-             dx_new = (x(i-1)-x(i-2))*stretching !change in cell size, this is the distance between each node
-             x(i) = x(i-1)+dx_new !location of new point, this is the distance plus the distance from the previously defined point
-             !for a uniform mesh it would be x(i) = x(i-1)+dx
-          end do
-          if (amRoot) then
-             print*, "Number of nodes added to domain: ", nx_stretching
-             print*,"New domain length with extension is: ", x(nx+1+nx_stretching)
-          end if
+         stretching = 1.1_WP
+         do i=nx+2, nx+1+nx_stretching
+            dx_new = (x(i-1)-x(i-2))*stretching
+            x(i) = x(i-1)+dx_new
+         end do
+         if (amRoot) then
+            print*, "Number of nodes added to domain: ", nx_stretching
+            print*,"New domain length with extension is: ", x(nx+1+nx_stretching)
+         end if
           
          ! General serial grid object
          grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='ShockDrop')
 
       end block create_grid
-
 
       ! Create a config from that grid on our entire group
       create_cfg: block
@@ -287,8 +283,6 @@ contains
 
       end block create_cfg
 
-
    end subroutine geometry_init
-
 
 end module geometry

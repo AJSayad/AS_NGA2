@@ -24,9 +24,9 @@ module simulation
    type(hypre_str),   public :: vs
 
    !> Ensight postprocessing
-   type(surfmesh) :: smesh !AS
-   type(ensight) :: ens_out, ens_out_smesh !AS
-   type(event)   :: ens_evt, ens_evt_smesh !AS
+   type(surfmesh) :: smesh 
+   type(ensight) :: ens_out, ens_out_smesh 
+   type(event)   :: ens_evt, ens_evt_smesh 
 
    !> Simulation monitor file
    type(monitor) :: mfile,cflfile,cvgfile
@@ -99,7 +99,7 @@ contains
       ! Initialize our VOF solver and field
       create_and_initialize_vof: block
          use mms_geom, only: cube_refine_vol
-         use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux ! AS added plicnet, flux 
+         use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux
          integer :: i,j,k,n,si,sj,sk
          real(WP), dimension(3,8) :: cube_vertex
          real(WP), dimension(3) :: v_cent,a_cent
@@ -139,8 +139,7 @@ contains
                   if (vf%VF(i,j,k).ge.VFlo.and.vf%VF(i,j,k).le.VFhi) then
                      vf%Lbary(:,i,j,k)=v_cent
                      vf%Gbary(:,i,j,k)=([vf%cfg%xm(i),vf%cfg%ym(j),vf%cfg%zm(k)]-vf%VF(i,j,k)*vf%Lbary(:,i,j,k))/(1.0_WP-vf%VF(i,j,k))
-                     !vf%Gbary(3,i,j,k)=v_cent(3);
-                     if (vf%cfg%nz.eq.1) vf%Gbary(3,i,j,k)=v_cent(3); !AS 
+                     if (vf%cfg%nz.eq.1) vf%Gbary(3,i,j,k)=v_cent(3);
                   else
                      vf%Lbary(:,i,j,k)=[vf%cfg%xm(i),vf%cfg%ym(j),vf%cfg%zm(k)]
                      vf%Gbary(:,i,j,k)=[vf%cfg%xm(i),vf%cfg%ym(j),vf%cfg%zm(k)]
@@ -148,6 +147,7 @@ contains
                end do
             end do
          end do
+         
          ! Boundary conditions on VF are built into the mast solver
          ! Update the band
          call vf%update_band()
@@ -230,21 +230,23 @@ contains
          call param_read('Pre-shock density',Grho0,default=1.204_WP); fs%Grho = Grho0
          call param_read('Pre-shock pressure',GP0,default=1.01325e5_WP)
          call param_read('Mach number of shock',Ma,default=1.47_WP)
+
          ! Initially 0 velocity in y and z
          fs%Vi = 0.0_WP; fs%Wi = 0.0_WP
+
          ! Zero face velocities as well for the sake of dirichlet boundaries
          fs%V = 0.0_WP; fs%W = 0.0_WP
 
          ! Initialize conditions
          call param_read('Shock location',xshock)
-         !AS added use shock relations to get post shock numbers
+         ! use shock relations to get post shock numbers
          GP1 = GP0 * (2.0_WP*gamm_g*Ma**2 - (gamm_g-1.0_WP)) / (gamm_g+1.0_WP)
          Grho1 = Grho0 * (Ma**2 * (gamm_g+1.0_WP) / ((gamm_g-1.0_WP)*Ma**2 + 2.0_WP))
-         !AS calculate post shock Mach number (mach number of gas behind shock)
+         ! calculate post shock Mach number (mach number of gas behind shock)
          Ma1 = sqrt(((gamm_g-1.0_WP)*(Ma**2)+2.0_WP)/(2.0_WP*gamm_g*(Ma**2)-(gamm_g-1.0_WP)))
-         !AS calculate post shock velocity (velocity of the gas behind the shock)
+         ! calculate post shock velocity (velocity of the gas behind the shock)
          vshock = -Ma1 * sqrt(gamm_g*GP1/Grho1) + Ma*sqrt(gamm_g*GP0/Grho0)
-         !AS velocity at which the shock moves
+         ! velocity at which the shock moves
          relshockvel = -Grho1*vshock/(Grho0-Grho1)
 
          if (amRoot) then
@@ -258,7 +260,7 @@ contains
          ! Initialize gas phase quantities
          do i=fs%cfg%imino_,fs%cfg%imaxo_
            ! pressure, velocity, use matmod for energy
-           if (fs%cfg%x(i).lt.xshock) then !AS post shock properties
+           if (fs%cfg%x(i).lt.xshock) then 
               fs%Grho(i,:,:) = Grho1
               fs%Ui(i,:,:) = vshock
               fs%GP(i,:,:) = GP1
@@ -291,12 +293,14 @@ contains
 
          ! Calculate face velocities
          call fs%interp_vel_basic(vf,fs%Ui,fs%Vi,fs%Wi,fs%U,fs%V,fs%W)
+         
          ! Apply face BC - inflow
          call fs%get_bcond('inflow',mybc)
          do n=1,mybc%itr%n_
             i=mybc%itr%map(1,n); j=mybc%itr%map(2,n); k=mybc%itr%map(3,n)
             fs%U(i,j,k)=vshock
          end do
+         
          ! Apply face BC - outflow
          bc_scope = 'velocity'
          call fs%apply_bcond(time%dt,bc_scope)
@@ -304,9 +308,11 @@ contains
          ! Calculate mixture density and momenta
          fs%RHO   = (1.0_WP-vf%VF)*fs%Grho  + vf%VF*fs%Lrho
          fs%rhoUi = fs%RHO*fs%Ui; fs%rhoVi = fs%RHO*fs%Vi; fs%rhoWi = fs%RHO*fs%Wi
+         
          ! Perform initial pressure relax
          relax_model = mech_egy_mech_hhz
          call fs%pressure_relax(vf,matmod,relax_model)
+         
          ! Calculate initial phase and bulk moduli
          call fs%init_phase_bulkmod(vf,matmod)
          call fs%reinit_phase_pressure(vf,matmod)
@@ -358,16 +364,16 @@ contains
          call ens_out%add_scalar('VOF',vf%VF)
          call ens_out%add_scalar('curvature',vf%curv)
          call ens_out%add_scalar('Mach',fs%Mach)
-         call ens_out%add_scalar('fvf',cfg%VF)!AS
-         call ens_out%add_scalar('Tmptr',fs%Tmptr) !AS
-         call ens_out%add_scalar('SL_x',fs%sl_x) !AS
-         call ens_out%add_scalar('SL_y',fs%sl_y) !AS
-         call ens_out%add_scalar('SL_z',fs%sl_z) !AS
-         call ens_out%add_scalar('LP',fs%LP) !AS
-         call ens_out%add_scalar('GP',fs%GP) !AS
-         call ens_out%add_scalar('LrhoE',fs%LrhoE) !AS
-         call ens_out%add_scalar('GrhoE',fs%GrhoE) !AS
-         call ens_out%add_surface('plic',smesh) !AS
+         call ens_out%add_scalar('fvf',cfg%VF)
+         call ens_out%add_scalar('Tmptr',fs%Tmptr) 
+         call ens_out%add_scalar('SL_x',fs%sl_x)
+         call ens_out%add_scalar('SL_y',fs%sl_y)
+         call ens_out%add_scalar('SL_z',fs%sl_z)
+         call ens_out%add_scalar('LP',fs%LP)
+         call ens_out%add_scalar('GP',fs%GP)
+         call ens_out%add_scalar('LrhoE',fs%LrhoE)
+         call ens_out%add_scalar('GrhoE',fs%GrhoE)
+         call ens_out%add_surface('plic',smesh)
          ! Output to ensight
          if (ens_evt%occurs()) call ens_out%write_data(time%t)
        end block create_ensight
@@ -376,7 +382,6 @@ contains
        create_ensight_smesh: block
          real(WP) :: smesh_tper ! declare variable for smesh output frequency
          call param_read('Ensight smesh output period', smesh_tper)
-         !print*, 'Ensight smesh output period', smesh_tper
          ! create ensight output from cfg for smesh surface reconstruction
          ens_out_smesh=ensight(cfg=cfg,name='droplet_smesh')
          ! create event for ensight output
@@ -457,6 +462,7 @@ contains
          call fs%reinit_phase_pressure(vf,matmod)
          fs%Uiold=fs%Ui; fs%Viold=fs%Vi; fs%Wiold=fs%Wi
          fs%RHOold = fs%RHO
+         
          ! Remember old flow variables (phase)
          fs%Grhoold = fs%Grho; fs%Lrhoold = fs%Lrho
          fs%GrhoEold=fs%GrhoE; fs%LrhoEold=fs%LrhoE
@@ -487,17 +493,20 @@ contains
 
             ! Prepare pressure projection
             call fs%pressureproj_prepare(time%dt,vf,matmod)
+
             ! Initialize and solve Helmholtz equation
             call fs%psolv%setup()
             fs%psolv%sol=fs%PA-fs%P
             call fs%psolv%solve()
             call fs%cfg%sync(fs%psolv%sol)
+
             ! Perform corrector step using solution
             fs%P=fs%P+fs%psolv%sol
             call fs%pressureproj_correct(time%dt,vf,fs%psolv%sol)
 
             ! Record convergence monitor
             call cvgfile%write()
+
             ! Increment sub-iteration counter
             time%it=time%it+1
 
