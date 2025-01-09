@@ -10,12 +10,12 @@ nx stretch left: 25 #number of points to add at the left of domain for stretchin
 Ly :	0.17
 ny :	242 #484 # number of cells in the uniform region
 ny stretch : 30 # number of cells to add for stretching (i.e. ny_total = 2*ny_stretch + ny)
+Lz : 0.17
+nz: 242
+nz stretch : 30 # number of cells to add for stretching (i.e. nz_total = 2*nz_stretch + nz)
 
 Profile extraction flag: false
 n_shock : 10 #shock profile points (left and right of center)
-
-<!-- Lz :    12 -->
-<!-- nz :    96  -->
 
 # Flow setup
 Droplet diameter :  0.022

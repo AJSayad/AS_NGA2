@@ -33,8 +33,12 @@ contains
          real(WP) :: dx_old,alpha,dx_ref,start_ref
 
          ! variables for stretching in y
-         real(WP) :: y_box1,dy,dy_old,dy_stretch,Ly_ref
+         real(WP) :: dy,dy_old,dy_stretch
          integer ::  ny_stretch
+
+         ! variables for stretching in z
+         real(WP) :: dz,dz_old,dz_stretch
+         integer :: nz_stretch
          
          ! variable for shock profile extraction
          logical :: extract_flag
@@ -54,17 +58,23 @@ contains
          if (extract_flag.eqv.(.true.)) then
             call param_read('Ly',Ly);
             ny = 1 !if singlephase, run in 1D
+            nz = 1
+            Lz = dx
             allocate(y(ny+1))
-         else if (extract_flag.eqv.(.false.)) then !if multiphase, run the sim in 2D
+            allocate(z(nz+1))
+         else if (extract_flag.eqv.(.false.)) then !if multiphase, run sim in 2D or 3D
             call param_read('Ly',Ly); call param_read('ny',ny); call param_read('ny stretch',ny_stretch);
             allocate(y(ny+2*ny_stretch+1))
-         end if
 
-         call param_read('nz',nz,default=1); allocate(z(nz+1))
-         if (nz.eq.1) then
-            Lz = dx
-         else
-            call param_read('Lz',Lz)
+            call param_read('nz',nz,default=1)
+            call param_read('nz stretch',nz_stretch)
+            allocate(z(nz+2*nz_stretch+1))
+
+            if (nz.eq.1) then
+               Lz = dx
+            else
+               call param_read('Lz',Lz)
+            end if
          end if
         
          ! Read in droplet information
@@ -96,6 +106,13 @@ contains
                   dy = Ly/ny
                   y(j) = real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
                end do
+
+               ! uniform 1 cell mesh in z for 1D sim ***
+               do k=1,nz+1
+                  nz_stretch = 0 ! 1D
+                  dz = Lz/nz
+                  z(k) = real(k-1,WP)/real(nz,WP)*Lz-0.5_WP*Lz
+               end do
             else
                do j=1,ny+2*ny_stretch+1 !initialize y mesh array
                   y(j) = 0.0_WP
@@ -120,12 +137,27 @@ contains
                do j = 1,ny/2+ny_stretch
                   y(j) = -y(ny-j+(2*ny_stretch)+2)
                end do
+
+               ! z mesh
+               dz = Lz/nz ! define uniform grid spacing
+               z(nz/2+nz_stretch+1) = 0.0_WP !define centerline
+
+               do k = nz/2+nz_stretch+2,nz+nz_stretch+1
+                  z(k) = z(k-1) + dz
+               end do
+
+               !stretching in z
+               do k = nz+nz_stretch+2,nz+(2*nz_stretch)+1
+                  dz_old = z(k-2) - z(k-3)
+                  dz_stretch = alpha*dz_old
+                  z(k) = z(k-1) + dz_stretch
+               end do
+
+               ! mirror z across centerline
+               do k = 1,nz/2+nz_stretch
+                  z(k) = -z(nz-k+(2*nz_stretch)+2)
+               end do
             end if
-            
-            ! z is always uniform
-            do k=1,nz+1
-               z(k) = real(k-1,WP)/real(nz,WP)*Lz-0.5_WP*Lz
-            end do
 
             if(amRoot)then
                print*, "======== MESH DESCRIPTION IN x ========"
@@ -139,7 +171,7 @@ contains
                print*, "Start of uniform region: ", start_ref
                print*, "End of uniform region: ",x(nx+nx_stretchL+1)
                print*, "Rightmost point (stretched region right): ", x(nx_stretchL+nx+nx_stretchR+1)
-               print*, "Aspect ratio: ", dx/dy
+               print*, "Aspect ratio in uniform region: ", dx/dy
                print*, "Number of cells per droplet diameter: ", nx*(ddrop/Lx)
                print*, "======================================="             
             end if
@@ -150,9 +182,20 @@ contains
                print*, 'Stretching in y starts at: +- ', Ly/2
                print*, 'Number of cells added to the top and to the bottom: ', ny_stretch/2
                print*, 'Stretching ratio in y: ', alpha
-               print*, "Aspect ratio: ", dx/dy
+               print*, "Aspect ratio in uniform region: ", dx/dy
                print*, "Number of cells per droplet diameter: ", ny*(ddrop/Ly)
                print*, "========================================"                 
+            end if
+
+            if (amRoot) then
+               print*, "======== MESH DESCRIPTION IN z ========"
+               print*, 'Uniform region height: ', Lz
+               print*, 'Stretching in z starts at: +- ', Lz/2
+               print*, 'Number of cells added to the front and to the back: ', nz_stretch/2
+               print*, 'Stretching ratio in z: ', alpha
+               print*, "Aspect ratio in uniform region: ", dx/dz
+               print*, "Number of cells per droplet diameter: ", nz*(ddrop/Lz)
+               print*, "========================================"
             end if
 
             ! General serial grid object
