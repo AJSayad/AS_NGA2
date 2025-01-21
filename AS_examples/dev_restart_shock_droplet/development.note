@@ -1,0 +1,5 @@
+This version of the shock droplet simulation is numerically initialized with a singlephase simulation shock profile.
+
+Then a multiphase simulation is run. This also has the preliminary restart capability implemented.
+
+The files are likely very messy and the restart capability is running but has to still be verified. AS 1/21/2025
