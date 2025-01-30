@@ -1,6 +1,6 @@
 export nprocx=4 #number of processors in x, y, and z
-export nprocy=2
-export nprocz=2
+export nprocy=1
+export nprocz=1
 export ntasks=$((nprocx*nprocy*nprocz))
 
 echo "BASH - Number of processors x: " $nprocx

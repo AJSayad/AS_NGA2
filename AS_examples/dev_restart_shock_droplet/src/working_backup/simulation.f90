@@ -409,6 +409,11 @@ contains
          call param_read('Pre-shock pressure',GP0,default=1.01325e5_WP)
          call param_read('Mach number of shock',Ma,default=1.47_WP)
 
+         !! Initially 0 velocity in y and z
+         !fs%Vi = 0.0_WP; fs%Wi = 0.0_WP  
+         !! Zero face velocities as well for the sake of dirichlet boundaries
+         !fs%V = 0.0_WP; fs%W = 0.0_WP
+         
          !use shock relations to get post shock numbers
          GP1 = GP0 * (2.0_WP*gamm_g*Ma**2 - (gamm_g-1.0_WP)) / (gamm_g+1.0_WP)
          Grho1 = Grho0 * (Ma**2 * (gamm_g+1.0_WP) / ((gamm_g-1.0_WP)*Ma**2 + 2.0_WP))
@@ -630,7 +635,6 @@ contains
             call fs%add_bcond(name='outflow',type=clipped_neumann,locator=right_of_domain,face='x',dir=+1)
 
             ! treat inflow BC similar to Chase
-            ! use free stream post shock conditions
             do k=cfg%kmino_,cfg%kmaxo_
                do j=cfg%jmino_,cfg%jmaxo_
                   do i=cfg%imino_,cfg%imin_-1
@@ -652,11 +656,63 @@ contains
                      fs%Ui(i,j,k) = fs%U(cfg%imax_,j,k); fs%Vi(i,j,k) =  fs%Vi(cfg%imax_,j,k); fs%Wi(i,j,k) = fs%Wi(cfg%imax_,j,k)
                      fs%rhoUi(i,j,k) = fs%rhoUi(cfg%imax_,j,k); fs%rhoVi(i,j,k) = fs%rhoVi(cfg%imax_,j,k); fs%rhoWi(i,j,k) = fs%rhoWi(cfg%imax_,j,k)
                      fs%Grho(i,j,k) = fs%Grho(cfg%imax_,j,k); fs%GP(i,j,k) = fs%GP(cfg%imax_,j,k)
-                     fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(cfg%imax_,j,k),fs%Grho(cfg%imax_,j,k),fs%U(cfg%imax_,j,k),0.0_WP,0.0_WP,'gas')
+                     fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,j,k),fs%Grho(i,j,k),fs%U(i,j,k),0.0_WP,0.0_WP,'gas')
                      fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
                   end do
                end do
             end do
+            
+!This is section saved as a backup. This is a hardcoded test that seemed to work. 
+!            ! Treat left boundary (gas inflow)
+!            do k=cfg%kmino_,cfg%kmaxo_
+!               do j=cfg%jmino_,cfg%jmaxo_
+!                  do i=cfg%imino_,cfg%imin_+1
+!                     fs%U(i,j,k) = fs%U(2,j,k); fs%V(i,j,k) = 0.0_WP; fs%W(i,j,k) = 0.0_WP
+!                     fs%Ui(i,j,k) = fs%Ui(2,j,k); fs%Vi(i,j,k) = 0.0_WP; fs%Wi(i,j,k) = 0.0_WP
+!                     fs%rhoUi(i,j,k) = fs%rhoUi(2,j,k); fs%rhoVi(i,j,k) = 0.0_WP; fs%rhoWi(i,j,k) = 0.0_WP
+!                     fs%Grho(i,j,k) = fs%Grho(2,j,k); fs%GP(i,j,k) = fs%GP(2,j,k); !fs%Tmptr(i,j,k) = 1.0_WP;
+!                     fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(2,j,k),fs%Grho(2,j,k),fs%U(2,j,k),0.0_WP,0.0_WP,'gas')
+!                     fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+!                  end do
+!               end do
+!            end do
+!
+!            !print*, 'Left boundary: '
+!            !do i=cfg%imino_,5
+!            !   print*, 'i,', i
+!            !   print*, 'U: ', fs%U(i,1,1)
+!            !   print*, 'Ui: ',fs%Ui(i,1,1)
+!            !end do
+!
+!            ! Treat right boundary (outflow)
+!            do k=cfg%kmino_,cfg%kmaxo_
+!               do j=cfg%jmino_,cfg%jmaxo_
+!                  do i=cfg%imax_-1,cfg%imaxo_
+!                     fs%U(i,j,k) = fs%U(cfg%imax_-2,j,k); fs%V(i,j,k) = 0.0_WP; fs%W(i,j,k) = 0.0_WP
+!                     fs%Ui(i,j,k) = fs%Ui(cfg%imax_-2,j,k); fs%Vi(i,j,k) = 0.0_WP; fs%Wi(i,j,k) = 0.0_WP
+!                     fs%rhoUi(i,j,k) = fs%rhoUi(cfg%imax_-2,j,k); fs%rhoVi(i,j,k) = 0.0_WP; fs%rhoWi(i,j,k) = 0.0_WP
+!                     fs%Grho(i,j,k) = fs%Grho(cfg%imax_-2,j,k); fs%GP(i,j,k) = fs%GP(cfg%imax_-2,j,k); !fs%Tmptr(i,j,k) = 1.0_WP;
+!                     fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(cfg%imax_-2,j,k),fs%Grho(cfg%imax_-2,j,k),fs%U(cfg%imax_-2,j,k),0.0_WP,0.0_WP,'gas')
+!                     fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+!                  end do
+!               end do
+!            end do
+!
+!            !print*, 'Right boundary: '
+!            !do i=cfg%imax_-1,cfg%imaxo_
+!            !   print*, 'i,', i
+!            !   print*, 'U: ', fs%U(i,1,1)
+!            !   print*, 'Ui: ',fs%Ui(i,1,1)
+            !            !end do
+
+            ! Treat left boundary (gas inflow)
+            ! try using the boundary condition subroutines
+            ! this isn't working
+            !call fs%get_bcond('inflow',mybc)
+            !do n=1,mybc%itr%n_
+            !   i=mybc%itr%map(1,n); j=mybc%itr%map(2,n); k=mybc%itr%map(3,n)
+            !   fs%U(i,j,k)=vshock
+            !end do
             
             ! Apply face BC - outflow
             bc_scope = 'velocity'
