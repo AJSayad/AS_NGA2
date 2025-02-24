@@ -51,15 +51,15 @@ contains
          call param_read('nx',nx); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
          allocate(x(nx+nx_stretchL+nx_stretchR+1));
 
-         dx = Lx/nx
-         dx_ref = (Lx - start_ref)/real(nx,WP)
+         dx = Lx/nx ! get dx
+         dx_ref = (Lx - start_ref)/real(nx,WP) ! get dx in refined region
 
          ! if profile is being extracted, run the simulation in 1D
          if (extract_flag.eqv.(.true.)) then
             call param_read('Ly',Ly);
-            ny = 15 !1 !if singlephase, run in 1D
-            Ly = 15*dx
-            nz = 1 
+            ny = 50 !1 !if singlephase, run in 1D
+            nz = 1
+            Ly = 50*dx
             Lz = dx
             allocate(y(ny+1))
             allocate(z(nz+1))
@@ -121,9 +121,7 @@ contains
                   y(j) = 0.0_WP
                end do
 
-               dy = Ly/ny ! define uniform grid spacing
                y(ny/2+ny_stretch+1) = 0.0_WP !define the centerline of the domain
-
                !y array uniform region
                do j = ny/2+ny_stretch+2,ny+ny_stretch+1
                   y(j) = y(j-1) + dy
@@ -203,7 +201,7 @@ contains
             end if
 
             ! General serial grid object
-            grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='ShockDrop')
+            grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='singlephase_shock')
 
       end block create_grid
 

@@ -1,32 +1,34 @@
 # Parallelization
-Partition : 4 1 1
+Partition : 4 4 1
 I/O partition: 1 1 1
 
 # Mesh definition
-Lx :	1   # end of the refined region
+Lx :	0.15   # end of the refined region
 Lx ref: 0.0 # start of the refined uniform region in x direction
-nx :	200
+nx :	200 #340 
 nx stretch right: 0 #number of points to add at the right of domain for stretching
-nx stretch left: 0 #number of points to add at the left of domain for stretching
-Ly :	1 #0.01 
-ny :	200      # number of cells in the uniform region
+nx stretch left:  0 #number of points to add at the left of domain for stretching
+Ly :	0.15
+ny :	200 #340 #******hardcoded in geo.f90 for init sim for right now**** #1      # number of cells in the uniform region
 ny stretch : 0 # number of cells to add for stretching (i.e. ny_total = 2*ny_stretch + ny)
-Lz : 0.01
-nz: 1
+Lz : 	0.005
+nz:     1
 nz stretch : 0 # number of cells to add for stretching (i.e. nz_total = 2*nz_stretch + nz) 
 
-Profile extraction flag: false
-n_shock : 10   # shock profile points (left and right of center)
-
 # Flow setup
-Droplet diameter :   0.1
-Droplet location :   0.5 0 0
-Shock location :     0.4
-Single phase shock location: 0.1 # singlephase simulation starting shock location
-Final shock location :   0.3     # singlephase simulation final shock location
+Droplet diameter :   0.022
+Droplet location :   0.033 0 0
+Shock location :     0.02 
 Mach number of shock :   2.4
 Pre-shock density :   1.204
 Pre-shock pressure :  1.01e5
+
+# init sim setup
+Profile extraction flag: false
+n_shock : 10   # shock profile points (left and right of center)
+Single phase shock location: 0.01     # singlephase simulation starting shock location
+Final shock location :       0.02     # singlephase simulation final shock location
+Max timestep size :          1e-7
 
 # Fluid properties
 Liquid dynamic viscosity :    0
@@ -38,15 +40,13 @@ Liquid gamma :	      	     6.12
 Liquid Pref :		     3.43e8
 Liquid specific heat (constant vol): 4130.2
 Gas gamma : 		      1.4
-
 Liquid density :              1000
-Surface tension coefficient : 0
+Surface tension coefficient : 0.0
 
 # Time integration
-Max timestep size : 2.14e-6
-Multiphase max timestep size: 2.14000E-06
+Multiphase max timestep size: 1e-7  #@REPLACE@
 Max cfl number :    0.5
-Max time :     	  2e-3 #1e-3
+Max time :     	  1e-4 #1e-4
 Max steps :	  1000000
 
 # Pressure solver
@@ -58,11 +58,11 @@ Implicit tolerance : 1e-6
 Implicit iteration : 100
 
 # Ensight output
-Ensight output period : 5e-6
-Ensight smesh output period: 5e-6
+Ensight output period :      1e-5
+Ensight smesh output period: 1e-5
 
 # Restart
-Restart output period : 5e-6
-Restart from : 1.00580E-04
+Restart output period : 1e-5
+Restart from : 5.00000E-05
 
 # add post processing into sim?

@@ -57,7 +57,8 @@ contains
          ! if profile is being extracted, run the simulation in 1D
          if (extract_flag.eqv.(.true.)) then
             call param_read('Ly',Ly);
-            ny = 1 !if singlephase, run in 1D
+            ny = 15 !1 !if singlephase, run in 1D
+            Ly = 15*dx
             nz = 1 
             Lz = dx
             allocate(y(ny+1))

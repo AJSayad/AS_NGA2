@@ -83,7 +83,7 @@ contains
 
    !> Function that defines a level set function for a cylindrical droplet (2D)
    function levelset_cyl(xyz,t) result(G)
-      implicit none
+     implicit none
       real(WP), dimension(3),intent(in) :: xyz
       real(WP), intent(in) :: t
       real(WP) :: G
@@ -93,7 +93,7 @@ contains
    !> Function that defines a level set function for a spherical droplet (3D)
    function levelset_sphere(xyz,t) result(G)
       implicit none
-      real(WP), dimension(3),intent(in) :: xyz
+     real(WP), dimension(3),intent(in) :: xyz
       real(WP), intent(in) :: t
       real(WP) :: G
       G=1.0_WP-sqrt((xyz(1)-dctr(1))**2+(xyz(2)-dctr(2))**2+(xyz(3)-dctr(3))**2)/(ddrop/2.0)
@@ -103,14 +103,6 @@ contains
    subroutine simulation_init
       use param, only: param_read
       implicit none
-
-      !AS restart
-      ! set up an input file
-      ! this might not be needed 
-      read_input: block
-        use parallel, only: amRoot
-        input=inputfile(amRoot=amRoot,filename='input')
-      end block read_input
 
       ! if extraction flag is true --> run singlephase and then multiphase
       call param_read('Profile extraction flag',extract_flag)
@@ -137,7 +129,9 @@ contains
             relshockvel = -Grho1*vshock/(Grho0-Grho1)
 
             time%tmax = (final_xshock - start_xshock) / relshockvel ! calculate final singlephase time based on final shock position
-            print*, "Singlephase ending time: ", time%tmax
+            if (cfg%amRoot)then
+               print*, "Singlephase ending time: ", time%tmax
+            end if
 
          else if (extract_flag.eqv.(.false.)) then ! multiphase simulation with extracted shock profile
             call param_read('Max time',time%tmax)
@@ -172,26 +166,30 @@ contains
         ! read in I/O partition
         call param_read('I/O partition',iopartition)
 
-        print*, 'restart output period from input: ',save_evt%tper
-        print*, 'I/O partition from input: ', iopartition !AS working 
+        if (cfg%amRoot)then
+           print*, 'restart output period from input: ',save_evt%tper
+           print*, 'I/O partition from input: ', iopartition !AS working
+        end if
 
         ! initialize pardata
         if (extract_flag.eqv.(.false.)) then ! only run restart capability for multiphase sims 
            if (restarted) then
-              print*, 'Restarting simulation.' !AS working
               ! we are restarting, read file
               call df%initialize(pg=cfg,iopartition=iopartition,fdata='restart/data_'//trim(adjustl(timestamp)))
            else
-              ! we are not restarting, create a directory for the restart files
-              print*, 'Creating directory for restart files, not restarting.' !AS working
+              !print*, 'Creating directory for restart files, not restarting.' !AS working
               if (cfg%amRoot) then
                  if(.not.isdir('restart')) call makedir('restart') !AS working
               end if
               
               ! prepare pardata object for saving restart files
-              call df%initialize(pg=cfg,iopartition=iopartition,filename=trim(cfg%name),nval=2,nvar=29)
+              !call df%initialize(pg=cfg,iopartition=iopartition,filename=trim(cfg%name),nval=2,nvar=33)
+              call df%initialize(pg=cfg,iopartition=iopartition,filename=trim(cfg%name),nval=2,nvar=36)
               df%valname=['t ','dt']
-              df%varname=['Grho   ','Lrho   ','RHO    ','Ui     ','Vi     ','Wi     ','U      ','V      ','W      ','rhoUi  ','rhoVi  ','rhoWi  ','GrhoE  ','LrhoE  ','GP     ','LP     ','P      ','PA     ','GrhoSS2','LrhoSS2','RHOSS2 ','P11    ','P12    ','P13    ','P14    ','VOF    ']
+              !df%varname=['Grho   ','Lrho   ','RHO    ','Ui     ','Vi     ','Wi     ','U      ','V      ','W      ','rhoUi  ','rhoVi  ','rhoWi  ','GrhoE  ','LrhoE  ','GP     ','LP     ','P      ','PA     ','Tmptr  ','GrhoSS2','LrhoSS2','RHOSS2 ','P11    ','P12    ','P13    ','P14    ','P21    ','P22    ','P23    ','P24    ','SL_x   ','SL_y   ','SL_z   ']
+
+              ! to add pressure jump terms
+              df%varname=['Grho   ','Lrho   ','RHO    ','Ui     ','Vi     ','Wi     ','U      ','V      ','W      ','rhoUi  ','rhoVi  ','rhoWi  ','GrhoE  ','LrhoE  ','GP     ','LP     ','P      ','PA     ','Pjx    ','Pjy    ','Pjz    ','Tmptr  ','GrhoSS2','LrhoSS2','RHOSS2 ','P11    ','P12    ','P13    ','P14    ','P21    ','P22    ','P23    ','P24    ','SL_x   ','SL_y   ','SL_z   ']
            end if
         end if
       end block restart_and_save
@@ -212,7 +210,7 @@ contains
       create_and_initialize_vof: block
          use mms_geom, only: cube_refine_vol
          use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux
-         use mast_class, only: dirichlet,clipped_neumann,bc_scope !AS restart
+         !use mast_class, only: dirichlet,clipped_neumann,bc_scope !AS restart
          use irl_fortran_interface !AS restart
          
          integer :: i,j,k,n,si,sj,sk
@@ -221,43 +219,53 @@ contains
          real(WP) :: vol,area
          integer, parameter :: amr_ref_lvl=4
          real(WP), dimension(:,:,:), allocatable :: P11,P12,P13,P14 !AS restart, planes for interface reconstruction
+         real(WP), dimension(:,:,:), allocatable :: P21,P22,P23,P24
          
          ! Create a VOF solver with lvira reconstruction
          call vf%initialize(cfg=cfg,reconstruction_method=lvira,name='VOF')
 
-         ! Create a VOF solver with plicnet reconstruction with flux transport method
-         !call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
-
          !AS restart
          ! initialize the interface including restarts         
          if (restarted)then
-            !read in the planes directly and set the IRL interface
+            ! Read in the planes directly and set the IRL interface
             allocate(P11(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P11',var=P11)
             allocate(P12(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P12',var=P12)
             allocate(P13(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P13',var=P13)
             allocate(P14(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P14',var=P14)
-
-            do k=vf%cfg%kmino_,vf%cfg%kmaxo_
-               do j=vf%cfg%jmino_,vf%cfg%jmaxo_
-                  do i=vf%cfg%imino_,vf%cfg%imaxo_
-                     call setNumberOfPlanes(vf%liquid_gas_interface(i,j,k),1)
-                     call setPlane(vf%liquid_gas_interface(i,j,k),0,[P11(i,j,k),P12(i,j,k),P13(i,j,k)],P14(i,j,k))
+            allocate(P21(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P21',var=P21)
+            allocate(P22(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P22',var=P22)
+            allocate(P23(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P23',var=P23)
+            allocate(P24(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P24',var=P24)
+            do k=vf%cfg%kmin_,vf%cfg%kmax_
+               do j=vf%cfg%jmin_,vf%cfg%jmax_
+                  do i=vf%cfg%imin_,vf%cfg%imax_
+                     ! Check if the second plane is meaningful
+                     if (vf%two_planes.and.P21(i,j,k)**2+P22(i,j,k)**2+P23(i,j,k)**2.gt.0.0_WP) then
+                        call setNumberOfPlanes(vf%liquid_gas_interface(i,j,k),2)
+                        call setPlane(vf%liquid_gas_interface(i,j,k),0,[P11(i,j,k),P12(i,j,k),P13(i,j,k)],P14(i,j,k))
+                        call setPlane(vf%liquid_gas_interface(i,j,k),1,[P21(i,j,k),P22(i,j,k),P23(i,j,k)],P24(i,j,k))
+                     else
+                        call setNumberOfPlanes(vf%liquid_gas_interface(i,j,k),1)
+                        call setPlane(vf%liquid_gas_interface(i,j,k),0,[P11(i,j,k),P12(i,j,k),P13(i,j,k)],P14(i,j,k))
+                     end if
                   end do
                end do
             end do
-            deallocate(P11,P12,P13,P14)
-            
-            call df%pull(name='VOF',var=vf%VF) !read in VOF
-      
-            ! Boundary conditions on VF are built into the mast solver
-
-            !AS add vf%read_interface(this,filename)? We shouldn't need to build the interface because we should have it from the saved files
             call vf%sync_interface() ! this syncs the interface across processors
-            ! Update the band --> do we need this for the restart?
+            deallocate(P11,P12,P13,P14,P21,P22,P23,P24)
+            ! Reset moments to guarantee compatibility with interface reconstruction
+            call vf%reset_volume_moments()! this resets volumetric moments based on the interface  
+
+            ! how should we treat the boundaries for VOF? Left dirichlet set to zero and right Neumann outlet? Should this be done here or down in the fs setup?
+            ! this seems to fix the problem, should I remove my VOF BC from the fs setup section?
+            ! also, will I need to do this for the outflow BC? ---> this should be checked 
+            if (cfg%iproc.eq.1)               vf%VF(cfg%imino:cfg%imin-1,:,:)=0.0_WP
+            !if (cfg%iproc.eq.cfg%npx) vf%VF(cfg%imax+1:cfg%imaxo,:,:)=0.0_WP
+            
+            ! Update the band
             call vf%update_band() ! I think this searches for a fluid interface and updates the SL band 
-            ! Set initial interface at the boundaries
+            ! set interface at the boundaries
             call vf%set_full_bcond() ! I think this sets the liquid/gas plane boundaries based on the VOF field
-            ! AS is polygonaize_interface needed? Or is this read in from the saved files?
             ! Create discontinuous polygon mesh from IRL interface
             call vf%polygonalize_interface() ! this creates a polygonal representation of the interface
             ! Calculate distance from polygons
@@ -266,22 +274,62 @@ contains
             call vf%subcell_vol() ! this calcualtes the phase volumes within each cell based on the interface
             ! Calculate curvature
             call vf%get_curvature() ! this calculates the curvature of the interface using a least squares fit
+            
+
+            !AS OLD RESTART ATTEMPT
+            !read in the planes directly and set the IRL interface
+            !allocate(P11(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P11',var=P11)
+            !allocate(P12(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P12',var=P12)
+            !allocate(P13(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P13',var=P13)
+            !allocate(P14(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_)); call df%pull(name='P14',var=P14)
+
+            !do k=vf%cfg%kmino_,vf%cfg%kmaxo_
+            !   do j=vf%cfg%jmino_,vf%cfg%jmaxo_
+            !      do i=vf%cfg%imino_,vf%cfg%imaxo_
+            !         call setNumberOfPlanes(vf%liquid_gas_interface(i,j,k),1)
+            !         call setPlane(vf%liquid_gas_interface(i,j,k),0,[P11(i,j,k),P12(i,j,k),P13(i,j,k)],P14(i,j,k))
+            !      end do
+            !   end do
+            !end do
+            !deallocate(P11,P12,P13,P14)
+
+            !DONT READ IN VOF, instead calculate it from the interface data            
+            
+            ! read in VOF field            
+            !call df%pull(name='VOF',var=vf%VF)
+            ! Boundary conditions on VF are built into the mast solver
+            !call vf%sync_interface() ! this syncs the interface across processors
+            ! Update the band --> do we need this for the restart?
+            !call vf%update_band() ! I think this searches for a fluid interface and updates the SL band 
+            ! Set initial interface at the boundaries
+            !call vf%set_full_bcond() ! I think this sets the liquid/gas plane boundaries based on the VOF field
+            ! AS is polygonaize_interface needed? Or is this read in from the saved files?
+            ! Create discontinuous polygon mesh from IRL interface
+            !call vf%polygonalize_interface() ! this creates a polygonal representation of the interface
+            ! Calculate distance from polygons
+            !call vf%distance_from_polygon() ! this calculates the distance from the interface within the band
+            ! Calculate subcell phasic volumes
+            !call vf%subcell_vol() ! this calcualtes the phase volumes within each cell based on the interface
+            ! Calculate curvature
+            !call vf%get_curvature() ! this calculates the curvature of the interface using a least squares fit
             ! Reset moments to guarantee compatibility with interface reconstruction
-            call vf%reset_volume_moments() ! this resets volumetric moments based on the interface 
+            !call vf%reset_volume_moments() ! this resets volumetric moments based on the interface 
 
          else
             !no restart
             ! Initialize liquid
             if (extract_flag.eqv.(.true.)) then ! if singlephase, set drop diameter to 0.0 and VOF to 0.0
-               ddrop = 0.0_WP
+               !ddrop = 0.0_WP
                vf%VF = 0.0_WP
+               !print*, "VOF at sim L280: ", maxval(vf%VF(:,1,1))
+
             else if (extract_flag.eqv.(.false.)) then ! otherwise, initialize droplet based on diameter
                call param_read('Droplet diameter',ddrop)
                call param_read('Droplet location',dctr)
                do k=vf%cfg%kmino_,vf%cfg%kmaxo_
                   do j=vf%cfg%jmino_,vf%cfg%jmaxo_
                      do i=vf%cfg%imino_,vf%cfg%imaxo_
-                        ! Set cube vertices
+                       ! Set cube vertices
                         n=0
                         do sk=0,1
                            do sj=0,1
@@ -309,8 +357,10 @@ contains
                      end do
                   end do
                end do
+               
+            end if ! extract flag
 
-            end if ! extract flag 
+            !print*, "VOF at sim L319: ", maxval(vf%VF(:,1,1))
             
             ! Boundary conditions on VF are built into the mast solver
             ! Update the band
@@ -330,7 +380,9 @@ contains
             ! Reset moments to guarantee compatibility with interface reconstruction
             call vf%reset_volume_moments()
          end if ! no restart
-      end block create_and_initialize_vof
+       end block create_and_initialize_vof
+
+       !print*, "VOF at sim L341: ", maxval(vf%VF(:,1,1))
 
       ! Create a compressible two-phase flow solver
       create_and_initialize_flow_solver: block
@@ -409,6 +461,9 @@ contains
          call param_read('Pre-shock pressure',GP0,default=1.01325e5_WP)
          call param_read('Mach number of shock',Ma,default=1.47_WP)
 
+         ! set pressure relax model
+         relax_model = mech_egy_mech_hhz
+
          !use shock relations to get post shock numbers
          GP1 = GP0 * (2.0_WP*gamm_g*Ma**2 - (gamm_g-1.0_WP)) / (gamm_g+1.0_WP)
          Grho1 = Grho0 * (Ma**2 * (gamm_g+1.0_WP) / ((gamm_g-1.0_WP)*Ma**2 + 2.0_WP))
@@ -436,7 +491,7 @@ contains
             print*, "DO NOT FORGET TO FIX TOLERANCE VALUE AFTER TESTING."
             print*, "===================================="
          end if
-         
+
          if (.not.restarted)then !AS not restartarting
             ! if no restart, initialize cell centered velocities in y and z to zero 
             fs%Vi = 0.0_WP; fs%Wi = 0.0_WP  
@@ -446,12 +501,12 @@ contains
             ! Initialize gas phase quantities
             if (extract_flag.eqv.(.true.))then
                !singlephase sim for numerical initialization
-               call param_read('Single phase shock location',start_xshock); !print*,"start_xshock", start_xshock !singlephase shock starting location
+               call param_read('Single phase shock location',start_xshock) !singlephase shock starting location
                call param_read('Final shock location',final_xshock) !final shock location
-               ddrop = 0.0_WP !set to singelphase
-               do  i=fs%cfg%imino_,fs%cfg%imaxo_
+               
+               do i=fs%cfg%imino_,fs%cfg%imaxo_
                   if (cfg%xm(i).lt.start_xshock) then ! post shock values
-                     fs%Grho(i,:,:) = Grho1
+                     fs%Grho(i,:,:) = Grho1 
                      fs%Ui(i,:,:) = vshock
                      fs%GP(i,:,:) = GP1
                      fs%GrhoE(i,:,:) = matmod%EOS_energy(GP1,Grho1,vshock,0.0_WP,0.0_WP,'gas')
@@ -462,6 +517,7 @@ contains
                      fs%GrhoE(i,:,:) = matmod%EOS_energy(GP0,Grho0,0.0_WP,0.0_WP,0.0_WP,'gas')
                   end if
                end do
+               
             else
                !multiphase sim with numerical initialization
                call param_read('Shock location',xshock)
@@ -530,20 +586,24 @@ contains
                deallocate(Grho_profile);deallocate(GrhoE_profile);deallocate(Ui_profile);deallocate(GP_profile)
             end if
 
-            ! Calculate liquid pressure
-            if (fs%cfg%nz.eq.1) then
-               ! Cylinder configuration, curv = 1/r
-               ! LP0 = Pref + 2.0/ddrop*fs%sigma
-               LP0 = GP0 + 2.0/ddrop*fs%sigma
+            if (extract_flag.eqv.(.false.))then
+               ! Calculate liquid pressure
+               if (fs%cfg%nz.eq.1) then
+                  ! Cylinder configuration, curv = 1/r
+                  LP0 = GP0 + 2.0/ddrop*fs%sigma
+               else
+                  ! Sphere configuration, curv = 1/r + 1/r
+                  LP0 = GP0 + 4.0/ddrop*fs%sigma
+               end if
+               
+               !initialize liquid quantities
+               fs%Lrho = Lrho0
+               fs%LP = LP0
             else
-               ! Sphere configuration, curv = 1/r + 1/r
-               ! LP0 = Pref + 4.0/ddrop*fs%sigma
-               LP0 = GP0 + 4.0/ddrop*fs%sigma
+               fs%Lrho = 1.0_WP
+               fs%LP = 1.0_WP
             end if
-
-            !initialize liquid quantities
-            fs%Lrho = Lrho0
-            fs%LP = LP0
+            
             ! Initialize liquid energy, with surface tension
             fs%LrhoE = matmod%EOS_energy(LP0,Lrho0,0.0_WP,0.0_WP,0.0_WP,'liquid')
                
@@ -551,7 +611,7 @@ contains
             call fs%add_bcond(name= 'inflow',type=dirichlet      ,locator=left_of_domain ,face='x',dir=-1)
             call fs%add_bcond(name='outflow',type=clipped_neumann,locator=right_of_domain,face='x',dir=+1)
             
-            ! Calculate face velocities
+            ! Calculate facec velocities
             call fs%interp_vel_basic(vf,fs%Ui,fs%Vi,fs%Wi,fs%U,fs%V,fs%W)
             
             ! Apply face BC - inflow
@@ -567,29 +627,32 @@ contains
             
             ! Calculate mixture density and momenta
             fs%RHO   = (1.0_WP-vf%VF)*fs%Grho  + vf%VF*fs%Lrho
+            !print*, "TEST RHO sim L593: ", fs%RHO(:,1,1)
             fs%rhoUi = fs%RHO*fs%Ui; fs%rhoVi = fs%RHO*fs%Vi; fs%rhoWi = fs%RHO*fs%Wi
             
             ! Perform initial pressure relax
-            relax_model = mech_egy_mech_hhz
+            !relax_model = mech_egy_mech_hhz
             call fs%pressure_relax(vf,matmod,relax_model)
             
             ! Calculate initial phase and bulk moduli
             call fs%init_phase_bulkmod(vf,matmod)
             call fs%reinit_phase_pressure(vf,matmod)
             call fs%harmonize_advpressure_bulkmod(vf,matmod)
-            
+
             ! Set initial pressure to harmonized field based on internal energy
             fs%P = fs%PA
             
          else !AS restart
             ! Read data
-            call df%pull(name='Grho'   ,var=fs%Grho   ); 
+            ! when df%pull is called, it syncs the overlapping cells that are in the physical domain
+            ! the overlapping ghost cells on the edges of the boundaries are not saved with the restart files and must be set 
+            call df%pull(name='Grho'   ,var=fs%Grho   );
             call df%pull(name='Lrho'   ,var=fs%Lrho   ); 
-            call df%pull(name='RHO'    ,var=fs%RHO   ); 
-            call df%pull(name='Ui'     ,var=fs%Ui     ); 
+            call df%pull(name='RHO'    ,var=fs%RHO    ); 
+            call df%pull(name='Ui'     ,var=fs%Ui     ); ! cell centered value (see mast_class.f90)
             call df%pull(name='Vi'     ,var=fs%Vi     ); 
             call df%pull(name='Wi'     ,var=fs%Wi     ); 
-            call df%pull(name='U'      ,var=fs%U      ); 
+            call df%pull(name='U'      ,var=fs%U      ); ! face value (see mast_class.f90)
             call df%pull(name='V'      ,var=fs%V      ); 
             call df%pull(name='W'      ,var=fs%W      ); 
             call df%pull(name='rhoUi'  ,var=fs%rhoUi  ); 
@@ -600,77 +663,73 @@ contains
             call df%pull(name='GP'     ,var=fs%GP     ); 
             call df%pull(name='LP'     ,var=fs%LP     ); 
             call df%pull(name='P'      ,var=fs%P      ); 
-            call df%pull(name='PA'     ,var=fs%PA     ); 
+            call df%pull(name='PA'     ,var=fs%PA     );
+            call df%pull(name='Tmptr'  ,var=fs%Tmptr  );
+            call df%pull(name='Pjx'    ,var=fs%Pjx    ); ! AS pull pressure jump values 
+            call df%pull(name='Pjy'    ,var=fs%Pjy    );
+            call df%pull(name='Pjz'    ,var=fs%Pjz    );
             call df%pull(name='GrhoSS2',var=fs%GrhoSS2); 
             call df%pull(name='LrhoSS2',var=fs%LrhoSS2); 
-            call df%pull(name='RHOSS2',var=fs%RHOSS2);
+            call df%pull(name='RHOSS2' ,var=fs%RHOSS2 );
+            call df%pull(name='SL_x'   ,var=fs%sl_x   ); ! AS pull sensor data
+            call df%pull(name='SL_y'   ,var=fs%sl_y   );
+            call df%pull(name='SL_z'   ,var=fs%sl_z   );
 
-            print*, "AS check boundary indices in x"
-            print*, "cfg%imino_: ", cfg%imino_
-            print*, "cfg%imin_: ", cfg%imin_
-            print*, "cfg%imax_: ", cfg%imax_
-            print*, "cfg%imaxo_: ", cfg%imaxo_
-
-            print*, "AS check boundary indices in y"
-            print*, "cfg%jmino_: ", cfg%jmino_
-            print*, "cfg%jmin_: ", cfg%jmin_
-            print*, "cfg%jmax_: ", cfg%jmax_
-            print*, "cfg%jmaxo_: ", cfg%jmaxo_
-
-            print*, "AS check boundary indices in z"
-            print*, "cfg%kmino_: ", cfg%kmino_
-            print*, "cfg%kmin_: ", cfg%kmin_
-            print*, "cfg%kmax_: ", cfg%kmax_
-            print*, "cfg%kmaxo_: ", cfg%kmaxo_    
-
-            ! If we assign periodic in geometry.f90 do we need to add boundary conditions in top and bottom and left and right?
+            ! If we assign periodic in geometry.f90 do we need to add boundary conditions in top and bottom?
             
             ! define boundary conditions
             call fs%add_bcond(name= 'inflow',type=dirichlet      ,locator=left_of_domain ,face='x',dir=-1)
             call fs%add_bcond(name='outflow',type=clipped_neumann,locator=right_of_domain,face='x',dir=+1)
 
-            ! treat inflow BC similar to Chase
-            ! use free stream post shock conditions
-            do k=cfg%kmino_,cfg%kmaxo_
-               do j=cfg%jmino_,cfg%jmaxo_
-                  do i=cfg%imino_,cfg%imin_-1
-                     fs%U(i,j,k) = vshock; fs%V(i,j,k) = 0.0_WP; fs%W(i,j,k) = 0.0_WP
-                     fs%Ui(i,j,k) = vshock; fs%Vi(i,j,k) = 0.0_WP; fs%Wi(i,j,k) = 0.0_WP
-                     fs%rhoUi(i,j,k) = Grho1*vshock; fs%rhoVi(i,j,k) = 0.0_WP; fs%rhoWi(i,j,k) = 0.0_WP
-                     fs%Grho(i,j,k) = Grho1; fs%GP(i,j,k) = GP1
-                     fs%GrhoE(i,j,k) = matmod%EOS_energy(GP1,Grho1,vshock,0.0_WP,0.0_WP,'gas')
-                     fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
-                  end do
-               end do
-            end do
+            ! Ensure that we are only on the boundaries
+            if (cfg%iproc.eq.1) then ! apply inlet (dirichlet) condition
 
-            ! treat outflow BC
-            do k=cfg%kmino_,cfg%kmaxo_
-               do j=cfg%jmino_,cfg%jmaxo_
-                  do  i=cfg%imax_+1,cfg%imaxo_
-                     fs%U(i,j,k) = fs%U(cfg%imax_,j,k); fs%V(i,j,k) = fs%V(cfg%imax_,j,k); fs%W(i,j,k) = fs%W(cfg%imax_,j,k)
-                     fs%Ui(i,j,k) = fs%U(cfg%imax_,j,k); fs%Vi(i,j,k) =  fs%Vi(cfg%imax_,j,k); fs%Wi(i,j,k) = fs%Wi(cfg%imax_,j,k)
-                     fs%rhoUi(i,j,k) = fs%rhoUi(cfg%imax_,j,k); fs%rhoVi(i,j,k) = fs%rhoVi(cfg%imax_,j,k); fs%rhoWi(i,j,k) = fs%rhoWi(cfg%imax_,j,k)
-                     fs%Grho(i,j,k) = fs%Grho(cfg%imax_,j,k); fs%GP(i,j,k) = fs%GP(cfg%imax_,j,k)
-                     fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(cfg%imax_,j,k),fs%Grho(cfg%imax_,j,k),fs%U(cfg%imax_,j,k),0.0_WP,0.0_WP,'gas')
-                     fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+               !try using post shock values for simplicity
+               fs%U(cfg%imino:cfg%imin-1,:,:) = vshock; fs%V(cfg%imino:cfg%imin-1,:,:) = 0.0_WP; fs%W(cfg%imino:cfg%imin-1,:,:) = 0.0_WP
+               fs%Ui(cfg%imino:cfg%imin-1,:,:) = vshock; fs%Vi(cfg%imino:cfg%imin-1,:,:) = 0.0_WP; fs%Wi(cfg%imino:cfg%imin-1,:,:) = 0.0_WP
+               fs%rhoUi(cfg%imino:cfg%imin-1,:,:) = Grho1*vshock; fs%rhoVi(cfg%imino:cfg%imin-1,:,:) = 0.0_WP; fs%rhoWi(cfg%imino:cfg%imin-1,:,:) = 0.0_WP
+               fs%Grho(cfg%imino:cfg%imin-1,:,:) = Grho1; fs%GP(cfg%imino:cfg%imin-1,:,:) = GP1
+               fs%GrhoE(cfg%imino:cfg%imin-1,:,:) = matmod%EOS_energy(GP1,Grho1,vshock,0.0_WP,0.0_WP,'gas')
+               
+               do k=cfg%kmino_,cfg%kmaxo_
+                  do j=cfg%jmino_,cfg%jmaxo_
+                     do i=cfg%imino,cfg%imin-1
+                        fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+                      end do
                   end do
                end do
-            end do
+               
+               ! VOF BC's in subcell_vol() subroutine?
+               ! set VOF to zero at inlet 
+               vf%VF(cfg%imino:cfg%imin-1,:,:) = 0.0_WP
+               
+            end if
+
+            if (cfg%iproc.eq.cfg%npx) then ! apply (neumann) outlet condition
+               ! is there a better way to setup this loop?
+               do k=cfg%kmino_,cfg%kmaxo_
+                  do j=cfg%jmino_,cfg%jmaxo_
+                     do i=cfg%imax+1,cfg%imaxo
+                        fs%U(i,j,k) = fs%U(cfg%imax_,j,k); fs%V(i,j,k) = fs%V(cfg%imax_,j,k); fs%W(i,j,k) = fs%W(cfg%imax_,j,k);
+                        fs%Ui(i,j,k) = fs%Ui(cfg%imax_,j,k); fs%Vi(i,j,k) = fs%Vi(cfg%imax_,j,k); fs%Wi(i,j,k) = fs%Wi(cfg%imax_,j,k);
+                        fs%rhoUi(i,j,k) = fs%rhoUi(cfg%imax_,j,k); fs%rhoVi(i,j,k) = fs%rhoVi(cfg%imax_,j,k); fs%rhoWi(i,j,k) = fs%rhoWi(cfg%imax_,j,k);
+                        fs%Grho(i,j,k) = fs%Grho(cfg%imax_,j,k); fs%GP(i,j,k) = fs%GP(cfg%imax_,j,k)                        
+                        fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(cfg%imax_,j,k),fs%Grho(cfg%imax_,j,k),fs%U(cfg%imax_,j,k),fs%V(cfg%imax_,j,k),fs%W(cfg%imax_,j,k),'gas')
+                        fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+
+                        ! VOF BC's in subcell_vol() subroutine?
+                        ! set nuemann condition on VOF
+                        vf%VF(i,j,k) = vf%VF(cfg%imax_,j,k)
+                     end do
+                  end do
+               end do
+               
+            end if
             
             ! Apply face BC - outflow
             bc_scope = 'velocity'
             call fs%apply_bcond(time%dt,bc_scope)
 
-            !AS we already have the mixture density and momenta from the saved data
-            !calculate mixture density and momenta
-            !fs%RHO   = (1.0_WP-vf%VF)*fs%Grho  + vf%VF*fs%Lrho
-            !fs%rhoUi = fs%RHO*fs%Ui; fs%rhoVi = fs%RHO*fs%Vi; fs%rhoWi = fs%RHO*fs%Wi
-            
-            ! choose relaxation model and Perform initial pressure relax
-            relax_model = mech_egy_mech_hhz
-            call fs%pressure_relax(vf,matmod,relax_model)
-         
          end if
          
     end block create_and_initialize_flow_solver
@@ -805,9 +864,12 @@ contains
       use messager, only: die
       implicit none
 
+      integer :: i ! AS debug
+
+      !print*, "VOF at sim L816: ", maxval(vf%VF(:,1,1))
       ! Perform time integration
       do while (.not.time%done())
-
+         
          ! Increment time
          call fs%get_cfl(time%dt,time%cfl)
          call time%adjust_dt()
@@ -840,9 +902,25 @@ contains
          ! Perform sub-iterations
          do while (time%it.le.time%itmax)
 
+            !AS debug
+            !do i=cfg%imino,cfg%imin
+            !   print*, "check before advection step in sim.f90"
+            !   print*, "x-index: ", i
+            !   print*, "VOF: ", vf%VF(i,1,1)
+            !   print*, "Tmptr: ", fs%Tmptr(i,1,1)
+            !end do
+
             ! Predictor step, involving advection and pressure terms
             call fs%advection_step(time%dt,vf,matmod)
 
+            !AS debug
+            !do i=cfg%imino,cfg%imin
+            !   print*, "check after advection step in sim.f90"
+            !   print*, "x-index: ", i
+            !   print*, "VOF: ", vf%VF(i,1,1)
+            !   print*, "Tmptr: ", fs%Tmptr(i,1,1)
+            !end do
+            
             ! Viscous step
             call fs%diffusion_src_explicit_step(time%dt,vf,matmod)
 
@@ -897,7 +975,7 @@ contains
 
             !AS write data
             call ens_out%write_data(time%t)
-
+            
          end if
 
          if (ens_evt_smesh%occurs()) then
@@ -918,6 +996,7 @@ contains
                  use string, only: str_medium
                  character(len=str_medium) :: timestamp
                  real(WP), dimension(:,:,:), allocatable :: P11,P12,P13,P14
+                 real(WP), dimension(:,:,:), allocatable :: P21,P22,P23,P24
                  integer :: i,j,k
                  real(WP), dimension(4) :: plane
                  
@@ -926,6 +1005,10 @@ contains
                  allocate(P12(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
                  allocate(P13(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
                  allocate(P14(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+                 allocate(P21(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+                 allocate(P22(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+                 allocate(P23(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+                 allocate(P24(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
                  ! Store IRL data
                  do k=vf%cfg%kmino_,vf%cfg%kmaxo_
                     do j=vf%cfg%jmino_,vf%cfg%jmaxo_
@@ -933,7 +1016,10 @@ contains
                           ! First plane
                           plane=getPlane(vf%liquid_gas_interface(i,j,k),0)
                           P11(i,j,k)=plane(1); P12(i,j,k)=plane(2); P13(i,j,k)=plane(3); P14(i,j,k)=plane(4)
+                          ! Second plane
                           plane=0.0_WP
+                          if (getNumberOfPlanes(vf%liquid_gas_interface(i,j,k)).eq.2) plane=getPlane(vf%liquid_gas_interface(i,j,k),1)
+                          P21(i,j,k)=plane(1); P22(i,j,k)=plane(2); P23(i,j,k)=plane(3); P24(i,j,k)=plane(4)
                        end do
                     end do
                  end do
@@ -960,16 +1046,29 @@ contains
                  call df%push(name='GP'     ,var=fs%GP     )
                  call df%push(name='LP'     ,var=fs%LP     )
                  call df%push(name='P'      ,var=fs%P      ) 
-                 call df%push(name='PA'     ,var=fs%PA     ) 
+                 call df%push(name='PA'     ,var=fs%PA     )
+                 call df%push(name='Tmptr'  ,var=fs%Tmptr  )
+                 call df%push(name='Pjx'    ,var=fs%Pjx    ) !AS save pressure jump data
+                 call df%push(name='Pjy'    ,var=fs%Pjy    )
+                 call df%push(name='Pjz'    ,var=fs%Pjz    )
                  call df%push(name='GrhoSS2',var=fs%GrhoSS2) 
                  call df%push(name='LrhoSS2',var=fs%LrhoSS2) 
-                 call df%push(name='RHOSS2',var=fs%RHOSS2) 
-                 call df%push(name='P11'    ,var=P11            )
-                 call df%push(name='P12'    ,var=P12            )
-                 call df%push(name='P13'    ,var=P13            )
-                 call df%push(name='P14'    ,var=P14            )
-                 call df%push(name='VOF'    ,var=vf%VF     )
+                 call df%push(name='RHOSS2' ,var=fs%RHOSS2 )
+                 call df%push(name='P11'    ,var=P11       )
+                 call df%push(name='P12'    ,var=P12       )
+                 call df%push(name='P13'    ,var=P13       )
+                 call df%push(name='P14'    ,var=P14       )
+                 call df%push(name='P21'    ,var=P21       )
+                 call df%push(name='P22'    ,var=P22       )
+                 call df%push(name='P23'    ,var=P23       )
+                 call df%push(name='P24'    ,var=P24       )
+                 call df%push(name='SL_x'   ,var=fs%sl_x   ) !AS save sensor data
+                 call df%push(name='SL_y'   ,var=fs%sl_y   )
+                 call df%push(name='SL_z'   ,var=fs%sl_z   )
+                 !call df%push(name='VOF'    ,var=vf%VF     ) ! do not save VOF, it will be calculated based on the interface during restart
                  call df%write(fdata='restart/data_'//trim(adjustl(timestamp)))
+                 ! Deallocate
+                 deallocate(P11,P12,P13,P14,P21,P22,P23,P24)
                  
                end block save_restart
                
@@ -996,34 +1095,37 @@ contains
      
      delta = 2*cfg%dx(1)*n_shock !shock thickness
      tol = (Lx - start_ref)/nx ! set the tolerance to the mesh spacing in the uniform region
-     
-     if (extract_flag.eqv.(.true.)) then
-        !set up shock profile data files
-        open(1, file='Grho_profile.dat')
-        open(2, file='GrhoE_profile.dat')
-        open(3, file='Ui_profile.dat')
-        open(4, file='GP_profile.dat')
 
-        do i=cfg%imino_,cfg%imaxo_
-           if ((cfg%xm(i).lt.(final_xshock+tol)).and.(cfg%xm(i).gt.(final_xshock-tol))) then
-              print*, "The shock has been found at index: ", i
-              shock_index=i
-              print*, "stored shock index", shock_index
-           end if
-        end do
-
-        do i=shock_index-n_shock,shock_index+n_shock ! this is now writing 2*n_shock points
-           write(1,*) fs%Grho(i,1,1)
-           write(2,*) fs%GrhoE(i,1,1)
-           write(3,*) fs%Ui(i,1,1)
-           write(4,*) fs%GP(i,1,1)
-        end do
-
-        close(1)
-        close(2)
-        close(3)
-        close(4)
-     end if
+     !!! this still only works in serial, must be updated for parallel
+     !if(cfg%rank.eq.1)then !***** DEBUG
+        if (extract_flag.eqv.(.true.)) then
+           !set up shock profile data files
+           open(1, file='Grho_profile.dat')
+           open(2, file='GrhoE_profile.dat')
+           open(3, file='Ui_profile.dat')
+           open(4, file='GP_profile.dat')
+           
+           do i=cfg%imino_,cfg%imaxo_
+              if ((cfg%xm(i).lt.(final_xshock+tol)).and.(cfg%xm(i).gt.(final_xshock-tol))) then
+                 print*, "The shock has been found at index: ", i
+                 shock_index=i
+                 print*, "stored shock index", shock_index
+              end if
+           end do
+           
+           do i=shock_index-n_shock,shock_index+n_shock ! this is now writing 2*n_shock points
+              write(1,*) fs%Grho(i,1,1)
+              write(2,*) fs%GrhoE(i,1,1)
+              write(3,*) fs%Ui(i,1,1)
+              write(4,*) fs%GP(i,1,1)
+           end do
+           
+           close(1)
+           close(2)
+           close(3)
+           close(4)
+        end if
+     !end if
 
    end subroutine simulation_final
 
