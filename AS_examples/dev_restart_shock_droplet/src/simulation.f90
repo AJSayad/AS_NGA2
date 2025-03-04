@@ -934,8 +934,8 @@ contains
             call fs%pressureproj_prepare(time%dt,vf,matmod)
 
             !AS test
-            fs%psolv%rerr = 4.329512177565e-7
-            fs%psolv%it = 6
+            !fs%psolv%rerr = 4.329512177565e-7
+            !fs%psolv%it = 6
 
             ! Initialize and solve Helmholtz equation
             call fs%psolv%setup()
