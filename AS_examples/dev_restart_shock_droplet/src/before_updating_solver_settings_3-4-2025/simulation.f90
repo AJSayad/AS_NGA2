@@ -11,7 +11,6 @@ module simulation
    use event_class,       only: event
    use monitor_class,     only: monitor
    use hypre_str_class,   only: hypre_str
-   use ddadi_class,       only: ddadi !AS solver update 3-4-2025
    use pardata_class,     only: pardata !AS restart
    use inputfile_class,   only: inputfile !AS restart 
    implicit none
@@ -24,8 +23,7 @@ module simulation
    type(matm),        public :: matmod
    type(timetracker), public :: time
    type(hypre_str),   public :: ps
-   !type(hypre_str),   public :: vs
-   type(ddadi),   public :: vs !AS solver update 3-4-2025
+   type(hypre_str),   public :: vs
 
    !> Ensight postprocessing
    type(surfmesh) :: smesh
@@ -185,11 +183,11 @@ contains
               end if
               
               ! prepare pardata object for saving restart files
-              call df%initialize(pg=cfg,iopartition=iopartition,filename=trim(cfg%name),nval=2,nvar=37)
+              call df%initialize(pg=cfg,iopartition=iopartition,filename=trim(cfg%name),nval=2,nvar=37)!37)
               df%valname=['t ','dt']
 
               ! to add pressure jump terms
-              df%varname=['Grho   ','Lrho   ','RHO    ','Ui     ','Vi     ','Wi     ','U      ','V      ','W      ','rhoUi  ','rhoVi  ','rhoWi  ','GrhoE  ','LrhoE  ','GP     ','LP     ','P      ','PA     ','Pjx    ','Pjy    ','Pjz    ','Tmptr  ','GrhoSS2','LrhoSS2','RHOSS2 ','P11    ','P12    ','P13    ','P14    ','P21    ','P22    ','P23    ','P24    ','SL_x   ','SL_y   ','SL_z   ','Psol   ']
+              df%varname=['Grho   ','Lrho   ','RHO    ','Ui     ','Vi     ','Wi     ','U      ','V      ','W      ','rhoUi  ','rhoVi  ','rhoWi  ','GrhoE  ','LrhoE  ','GP     ','LP     ','P      ','PA     ','Pjx    ','Pjy    ','Pjz    ','Tmptr  ','GrhoSS2','LrhoSS2','RHOSS2 ','P11    ','P12    ','P13    ','P14    ','P21    ','P22    ','P23    ','P24    ','SL_x   ','SL_y   ','SL_z   ','Psol   ']!,'Prerr ','Piter ']
            end if
         end if
       end block restart_and_save
@@ -210,6 +208,7 @@ contains
       create_and_initialize_vof: block
          use mms_geom, only: cube_refine_vol
          use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux
+         !use mast_class, only: dirichlet,clipped_neumann,bc_scope !AS restart
          use irl_fortran_interface !AS restart
          
          integer :: i,j,k,n,si,sj,sk
@@ -221,8 +220,7 @@ contains
          real(WP), dimension(:,:,:), allocatable :: P21,P22,P23,P24
          
          ! Create a VOF solver with lvira reconstruction
-         !call vf%initialize(cfg=cfg,reconstruction_method=lvira,name='VOF')
-         call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')!AS solver update 3-4-2025
+         call vf%initialize(cfg=cfg,reconstruction_method=lvira,name='VOF')
 
          !AS restart
          ! initialize the interface including restarts         
@@ -342,9 +340,7 @@ contains
       ! Create a compressible two-phase flow solver
       create_and_initialize_flow_solver: block
          use mast_class,      only: clipped_neumann,dirichlet,bc_scope,bcond,mech_egy_mech_hhz
-         !use hypre_str_class, only: pcg_pfmg
-         use hypre_str_class, only: pcg_pfmg2 !AS solver update 3-4-2025
-         use ddadi_class,     only: ddadi !AS solver update 3-4-2025
+         use hypre_str_class, only: pcg_pfmg
          use mathtools,       only: Pi
          use parallel,        only: amRoot
          use messager,        only: die
@@ -399,18 +395,15 @@ contains
          call param_read('Surface tension coefficient',fs%sigma)
 
          ! Configure pressure solver
-         !ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg,nst=7)
-         ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg2,nst=7)!AS solver update 3-4-2025
+         ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg,nst=7)
          ps%maxlevel=10
          call param_read('Pressure iteration',ps%maxit)
          call param_read('Pressure tolerance',ps%rcvg)
 
          ! Configure implicit velocity solver
-         !vs=hypre_str(cfg=cfg,name='Velocity',method=pcg_pfmg,nst=7)
-         !vs=hypre_str(cfg=cfg,name='Velocity',method=pcg_pfmg2,nst=7)!AS solver update 3-4-2025
-         !call param_read('Implicit iteration',vs%maxit)
-         !call param_read('Implicit tolerance',vs%rcvg)
-         vs=ddadi(cfg=cfg,name='Velocity',nst=7) !AS solver update 3-4-2025
+         vs=hypre_str(cfg=cfg,name='Velocity',method=pcg_pfmg,nst=7)
+         call param_read('Implicit iteration',vs%maxit)
+         call param_read('Implicit tolerance',vs%rcvg)
 
          ! Setup the solver
          call fs%setup(pressure_solver=ps,implicit_solver=vs)

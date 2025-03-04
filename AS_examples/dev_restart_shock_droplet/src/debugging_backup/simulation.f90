@@ -11,7 +11,6 @@ module simulation
    use event_class,       only: event
    use monitor_class,     only: monitor
    use hypre_str_class,   only: hypre_str
-   use ddadi_class,       only: ddadi !AS solver update 3-4-2025
    use pardata_class,     only: pardata !AS restart
    use inputfile_class,   only: inputfile !AS restart 
    implicit none
@@ -24,8 +23,7 @@ module simulation
    type(matm),        public :: matmod
    type(timetracker), public :: time
    type(hypre_str),   public :: ps
-   !type(hypre_str),   public :: vs
-   type(ddadi),   public :: vs !AS solver update 3-4-2025
+   type(hypre_str),   public :: vs
 
    !> Ensight postprocessing
    type(surfmesh) :: smesh
@@ -185,11 +183,13 @@ contains
               end if
               
               ! prepare pardata object for saving restart files
-              call df%initialize(pg=cfg,iopartition=iopartition,filename=trim(cfg%name),nval=2,nvar=37)
+              !call df%initialize(pg=cfg,iopartition=iopartition,filename=trim(cfg%name),nval=2,nvar=33)
+              call df%initialize(pg=cfg,iopartition=iopartition,filename=trim(cfg%name),nval=2,nvar=36)
               df%valname=['t ','dt']
+              !df%varname=['Grho   ','Lrho   ','RHO    ','Ui     ','Vi     ','Wi     ','U      ','V      ','W      ','rhoUi  ','rhoVi  ','rhoWi  ','GrhoE  ','LrhoE  ','GP     ','LP     ','P      ','PA     ','Tmptr  ','GrhoSS2','LrhoSS2','RHOSS2 ','P11    ','P12    ','P13    ','P14    ','P21    ','P22    ','P23    ','P24    ','SL_x   ','SL_y   ','SL_z   ']
 
               ! to add pressure jump terms
-              df%varname=['Grho   ','Lrho   ','RHO    ','Ui     ','Vi     ','Wi     ','U      ','V      ','W      ','rhoUi  ','rhoVi  ','rhoWi  ','GrhoE  ','LrhoE  ','GP     ','LP     ','P      ','PA     ','Pjx    ','Pjy    ','Pjz    ','Tmptr  ','GrhoSS2','LrhoSS2','RHOSS2 ','P11    ','P12    ','P13    ','P14    ','P21    ','P22    ','P23    ','P24    ','SL_x   ','SL_y   ','SL_z   ','Psol   ']
+              df%varname=['Grho   ','Lrho   ','RHO    ','Ui     ','Vi     ','Wi     ','U      ','V      ','W      ','rhoUi  ','rhoVi  ','rhoWi  ','GrhoE  ','LrhoE  ','GP     ','LP     ','P      ','PA     ','Pjx    ','Pjy    ','Pjz    ','Tmptr  ','GrhoSS2','LrhoSS2','RHOSS2 ','P11    ','P12    ','P13    ','P14    ','P21    ','P22    ','P23    ','P24    ','SL_x   ','SL_y   ','SL_z   ']
            end if
         end if
       end block restart_and_save
@@ -210,6 +210,7 @@ contains
       create_and_initialize_vof: block
          use mms_geom, only: cube_refine_vol
          use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux
+         !use mast_class, only: dirichlet,clipped_neumann,bc_scope !AS restart
          use irl_fortran_interface !AS restart
          
          integer :: i,j,k,n,si,sj,sk
@@ -221,8 +222,7 @@ contains
          real(WP), dimension(:,:,:), allocatable :: P21,P22,P23,P24
          
          ! Create a VOF solver with lvira reconstruction
-         !call vf%initialize(cfg=cfg,reconstruction_method=lvira,name='VOF')
-         call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')!AS solver update 3-4-2025
+         call vf%initialize(cfg=cfg,reconstruction_method=lvira,name='VOF')
 
          !AS restart
          ! initialize the interface including restarts         
@@ -342,9 +342,7 @@ contains
       ! Create a compressible two-phase flow solver
       create_and_initialize_flow_solver: block
          use mast_class,      only: clipped_neumann,dirichlet,bc_scope,bcond,mech_egy_mech_hhz
-         !use hypre_str_class, only: pcg_pfmg
-         use hypre_str_class, only: pcg_pfmg2 !AS solver update 3-4-2025
-         use ddadi_class,     only: ddadi !AS solver update 3-4-2025
+         use hypre_str_class, only: pcg_pfmg
          use mathtools,       only: Pi
          use parallel,        only: amRoot
          use messager,        only: die
@@ -399,18 +397,15 @@ contains
          call param_read('Surface tension coefficient',fs%sigma)
 
          ! Configure pressure solver
-         !ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg,nst=7)
-         ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg2,nst=7)!AS solver update 3-4-2025
+         ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg,nst=7)
          ps%maxlevel=10
          call param_read('Pressure iteration',ps%maxit)
          call param_read('Pressure tolerance',ps%rcvg)
 
          ! Configure implicit velocity solver
-         !vs=hypre_str(cfg=cfg,name='Velocity',method=pcg_pfmg,nst=7)
-         !vs=hypre_str(cfg=cfg,name='Velocity',method=pcg_pfmg2,nst=7)!AS solver update 3-4-2025
-         !call param_read('Implicit iteration',vs%maxit)
-         !call param_read('Implicit tolerance',vs%rcvg)
-         vs=ddadi(cfg=cfg,name='Velocity',nst=7) !AS solver update 3-4-2025
+         vs=hypre_str(cfg=cfg,name='Velocity',method=pcg_pfmg,nst=7)
+         call param_read('Implicit iteration',vs%maxit)
+         call param_read('Implicit tolerance',vs%rcvg)
 
          ! Setup the solver
          call fs%setup(pressure_solver=ps,implicit_solver=vs)
@@ -615,6 +610,9 @@ contains
             
          else !AS restart
 
+            !print*, "U check init sim.f90 L613: U(18,33) = ", fs%U(18,33,1)
+            !print*, "V check init sim.f90 L614: V(18,33) = ", fs%V(18,33,1)
+            
             ! Read data
             ! when df%pull is called, it syncs the overlapping cells that are in the physical domain
             ! the overlapping ghost cells on the edges of the boundaries are not saved with the restart files and must be set 
@@ -646,9 +644,6 @@ contains
             call df%pull(name='SL_x'   ,var=fs%sl_x   ); ! AS pull sensor data
             call df%pull(name='SL_y'   ,var=fs%sl_y   );
             call df%pull(name='SL_z'   ,var=fs%sl_z   );
-            call df%pull(name='Psol'   ,var=fs%psolv%sol);
-            !call df%pull(name='Piter'  ,var=fs%psolv%it);
-            !call df%pull(name='Piter'  ,var=fs%psolv%it);
 
             !print*, "U check init sim.f90 L648: U(18,33) = ", fs%U(18,33,1)
             !print*, "V check init sim.f90 L649: V(18,33) = ", fs%V(18,33,1)
@@ -884,11 +879,27 @@ contains
             if ((time%n.eq.50).or.(time%n.eq.51).or.(time%n.eq.52)) then
                write(15,*) "time iteration 50 in the nonrestarted case should be equal to time iteration 0 for the restarted case"
                write(15,*) "time iteration 51 in the nonrestarted case should be equal to time iteration 1 for the restarted case"
+         !      write(15,*) "DEBUG A: before increment time"
+         !      write(15,*) "Time iteration: ", time%n
+         !      write(15,*) "Physical Simulation time: ", time%t
+         !      write(15,*) "Timestep Size: ", time%dt
+         !      write(15,*) "U check main loop sim.f90: U(18,33,1) = ", fs%U(18,33,1)
+         !      write(15,*) "V check main loop sim.f90: V(18,33,1) = ", fs%V(18,33,1)
+         !      write(15,*) "P check main loop sim.f90: P(18,33,1) = ", fs%P(18,33,1)
+         !      write(15,*) "VOF check main loop sim.f90: VOF(18,33,1) = ", vf%VF(18,33,1)
             end if
          else
             if ((time%n.eq.0).or.(time%n.eq.1).or.(time%n.eq.2)) then
                write(15,*) "time iteration 50 in the nonrestarted case should be equal to time iteration 0 for the restarted case"
                write(15,*) "time iteration 51 in the nonrestarted case should be equal to time iteration 1 for the restarted case"
+         !      write(15,*) "DEBUG A: before increment time"
+         !      write(15,*) "Time iteration: ", time%n
+         !      write(15,*) "Physical Simulation time: ", time%t
+         !      write(15,*) "Timestep Size: ", time%dt
+         !      write(15,*) "U check main loop sim.f90: U(18,33,1) = ", fs%U(18,33,1)
+         !      write(15,*) "V check main loop sim.f90: V(18,33,1) = ", fs%V(18,33,1)
+         !      write(15,*) "P check main loop sim.f90: P(18,33,1) = ", fs%P(18,33,1)
+         !      write(15,*) "VOF check main loop sim.f90: VOF(18,33,1) = ", vf%VF(18,33,1)
             end if
          end if
          
@@ -921,21 +932,96 @@ contains
          ! Determine semi-Lagrangian advection flag
          call fs%flag_sl(time%dt,vf)
 
+         !AS debug
+         !if (.not.restarted)then
+         !   if ((time%n.eq.50).or.(time%n.eq.51).or.(time%n.eq.52)) then
+         !      write(15,*) "DEBUG B: before sub iterations"
+         !      write(15,*) "Time iteration: ", time%n
+         !      write(15,*) "Physical Simulation time: ", time%t
+         !      write(15,*) "Timestep Size: ", time%dt
+         !      write(15,*) "U check main loop sim.f90: U(18,33,1) = ", fs%U(18,33,1)
+         !      write(15,*) "V check main loop sim.f90: V(18,33,1) = ", fs%V(18,33,1)
+         !      write(15,*) "P check main loop sim.f90: P(18,33,1) = ", fs%P(18,33,1)
+         !      write(15,*) "VOF check main loop sim.f90: VOF(18,33,1) = ", vf%VF(18,33,1)
+         !   end if
+         !else
+         !   if ((time%n.eq.0).or.(time%n.eq.1).or.(time%n.eq.2)) then
+         !      write(15,*) "DEBUG B: before sub iterations"
+         !      write(15,*) "Time iteration: ", time%n
+         !      write(15,*) "Physical Simulation time: ", time%t
+         !      write(15,*) "Timestep Size: ", time%dt
+         !      write(15,*) "U check main loop sim.f90: U(18,33,1) = ", fs%U(18,33,1)
+         !      write(15,*) "V check main loop sim.f90: V(18,33,1) = ", fs%V(18,33,1)
+         !      write(15,*) "P check main loop sim.f90: P(18,33,1) = ", fs%P(18,33,1)
+         !      write(15,*) "VOF check main loop sim.f90: VOF(18,33,1) = ", vf%VF(18,33,1)
+         !   end if
+         !end if
+
          ! Perform sub-iterations
          do while (time%it.le.time%itmax)
             
             ! Predictor step, involving advection and pressure terms
             call fs%advection_step(time%dt,vf,matmod)
             
+            !AS debug
+            !if (.not.restarted)then
+            !   if ((time%n.eq.50).or.(time%n.eq.51).or.(time%n.eq.52)) then
+            !      write(15,*) "DEBUG X: After advection step"
+            !      write(15,*) "Time iteration: ", time%n
+            !      write(15,*) "Sub iteration: ", time%it
+            !      write(15,*) "Physical Simulation time: ", time%t
+            !      write(15,*) "Timestep Size: ", time%dt
+            !      write(15,*) "U check main loop sim.f90: U(18,33,1) = ", fs%U(18,33,1)
+            !      write(15,*) "V check main loop sim.f90: V(18,33,1) = ", fs%V(18,33,1)
+            !      write(15,*) "P check main loop sim.f90: P(18,33,1) = ", fs%P(18,33,1)
+            !      write(15,*) "VOF check main loop sim.f90: VOF(18,33,1) = ", vf%VF(18,33,1)
+            !   end if
+            !else
+            !   if ((time%n.eq.0).or.(time%n.eq.1).or.(time%n.eq.2)) then
+            !      write(15,*) "DEBUG X: After advection step"
+            !      write(15,*) "Time iteration: ", time%n
+            !      write(15,*) "Sub iteration: ", time%it
+            !      write(15,*) "Physical Simulation time: ", time%t
+            !      write(15,*) "Timestep Size: ", time%dt
+            !      write(15,*) "U check main loop sim.f90: U(18,33,1) = ", fs%U(18,33,1)
+            !      write(15,*) "V check main loop sim.f90: V(18,33,1) = ", fs%V(18,33,1)
+            !      write(15,*) "P check main loop sim.f90: P(18,33,1) = ", fs%P(18,33,1)
+            !      write(15,*) "VOF check main loop sim.f90: VOF(18,33,1) = ", vf%VF(18,33,1)
+            !   end if
+            !end if
+            
             ! Viscous step
             call fs%diffusion_src_explicit_step(time%dt,vf,matmod)
 
+            !AS debug
+            !if (.not.restarted)then
+            !   if ((time%n.eq.50).or.(time%n.eq.51).or.(time%n.eq.52)) then
+            !      write(15,*) "DEBUG Y: After diffusion step"
+            !      write(15,*) "Time iteration: ", time%n
+            !      write(15,*) "Sub iteration: ", time%it
+            !      write(15,*) "Physical Simulation time: ", time%t
+            !      write(15,*) "Timestep Size: ", time%dt
+            !      write(15,*) "U check main loop sim.f90: U(18,33,1) = ", fs%U(18,33,1)
+            !      write(15,*) "V check main loop sim.f90: V(18,33,1) = ", fs%V(18,33,1)
+            !      write(15,*) "P check main loop sim.f90: P(18,33,1) = ", fs%P(18,33,1)
+            !      write(15,*) "VOF check main loop sim.f90: VOF(18,33,1) = ", vf%VF(18,33,1)
+            !   end if
+            !else
+            !   if ((time%n.eq.0).or.(time%n.eq.1).or.(time%n.eq.2)) then
+            !      write(15,*) "DEBUG Y: After diffusion step"
+            !      write(15,*) "Time iteration: ", time%n
+            !      write(15,*) "Sub iteration: ", time%it
+            !      write(15,*) "Physical Simulation time: ", time%t
+            !      write(15,*) "Timestep Size: ", time%dt
+            !      write(15,*) "U check main loop sim.f90: U(18,33,1) = ", fs%U(18,33,1)
+            !      write(15,*) "V check main loop sim.f90: V(18,33,1) = ", fs%V(18,33,1)
+            !      write(15,*) "P check main loop sim.f90: P(18,33,1) = ", fs%P(18,33,1)
+            !      write(15,*) "VOF check main loop sim.f90: VOF(18,33,1) = ", vf%VF(18,33,1)
+            !   end if
+            !end if
+
             ! Prepare pressure projection
             call fs%pressureproj_prepare(time%dt,vf,matmod)
-
-            !AS test
-            fs%psolv%rerr = 4.329512177565e-7
-            fs%psolv%it = 6
 
             ! Initialize and solve Helmholtz equation
             call fs%psolv%setup()
@@ -970,10 +1056,6 @@ contains
                   write(15,*) "LrhoSS2 check main loop sim.f90: LrhoSS2(18,33,1) = ", fs%LrhoSS2(18,33,1)
                   write(15,*) "Pjx check main loop sim.f90: Pjx(18,33,1) = ", fs%Pjx(18,33,1)
                   write(15,*) "Pjy check main loop sim.f90: Pjy(18,33,1) = ", fs%Pjy(18,33,1)
-                  write(15,*) "fs%psolv%rhs check main loop sim.f90: fs%psolv%rhs(18,33,1) = ", fs%psolv%rhs(18,33,1)
-                  write(15,*) "fs%psolv%opr check main loop sim.f90: fs%psolv%opr(18,33,1) = ", fs%psolv%opr(:,18,33,1)
-                  write(15,*) "psolve iter check main loop sim.f90: fs%psolv%it = ", fs%psolv%it
-                  write(15,*) "psolve error check main loop sim.f90: fs%psolv%rerr = ", fs%psolv%rerr
                   Write(15,*) ""
                   write(15,*) "fs%psolv%sol(18,33,1): ", fs%psolv%sol(18,33,1)
                   write(15,*) "Discrepancy cell: fs%psolv%sol(18,33,1): ", fs%psolv%sol(18,33,1)
@@ -1015,10 +1097,6 @@ contains
                   write(15,*) "LrhoSS2 check main loop sim.f90: LrhoSS2(18,33,1) = ", fs%LrhoSS2(18,33,1)
                   write(15,*) "Pjx check main loop sim.f90: Pjx(18,33,1) = ", fs%Pjx(18,33,1)
                   write(15,*) "Pjy check main loop sim.f90: Pjy(18,33,1) = ", fs%Pjy(18,33,1)
-                  write(15,*) "fs%psolv%rhs check main loop sim.f90: fs%psolv%rhs(18,33,1) = ", fs%psolv%rhs(18,33,1)
-                  write(15,*) "fs%psolv%opr check main loop sim.f90: fs%psolv%opr(18,33,1) = ", fs%psolv%opr(:,18,33,1)
-                  write(15,*) "psolve iter check main loop sim.f90: fs%psolv%it = ", fs%psolv%it
-                  write(15,*) "psolve error check main loop sim.f90: fs%psolv%rerr = ", fs%psolv%rerr
                   Write(15,*) ""
                   write(15,*) "fs%psolv%sol(18,33,1): ", fs%psolv%sol(18,33,1)
                   write(15,*) "Discrepancy cell: fs%psolv%sol(18,33,1): ", fs%psolv%sol(18,33,1)
@@ -1063,10 +1141,6 @@ contains
                   write(15,*) "LrhoSS2 check main loop sim.f90: LrhoSS2(18,33,1) = ", fs%LrhoSS2(18,33,1)
                   write(15,*) "Pjx check main loop sim.f90: Pjx(18,33,1) = ", fs%Pjx(18,33,1)
                   write(15,*) "Pjy check main loop sim.f90: Pjy(18,33,1) = ", fs%Pjy(18,33,1)
-                  write(15,*) "fs%psolv%rhs check main loop sim.f90: fs%psolv%rhs(18,33,1) = ", fs%psolv%rhs(18,33,1)
-                  write(15,*) "fs%psolv%opr check main loop sim.f90: fs%psolv%opr(18,33,1) = ", fs%psolv%opr(:,18,33,1)
-                  write(15,*) "psolve iter check main loop sim.f90: fs%psolv%it = ", fs%psolv%it
-                  write(15,*) "psolve error check main loop sim.f90: fs%psolv%rerr = ", fs%psolv%rerr
                   Write(15,*) ""
                   write(15,*) "fs%psolv%sol(18,33,1): ", fs%psolv%sol(18,33,1)
                   write(15,*) "Discrepancy cell: fs%psolv%sol(18,33,1): ", fs%psolv%sol(18,33,1)
@@ -1108,10 +1182,6 @@ contains
                   write(15,*) "LrhoSS2 check main loop sim.f90: LrhoSS2(18,33,1) = ", fs%LrhoSS2(18,33,1)
                   write(15,*) "Pjx check main loop sim.f90: Pjx(18,33,1) = ", fs%Pjx(18,33,1)
                   write(15,*) "Pjy check main loop sim.f90: Pjy(18,33,1) = ", fs%Pjy(18,33,1)
-                  write(15,*) "fs%psolv%rhs check main loop sim.f90: fs%psolv%rhs(18,33,1) = ", fs%psolv%rhs(18,33,1)
-                  write(15,*) "fs%psolv%opr check main loop sim.f90: fs%psolv%opr(18,33,1) = ", fs%psolv%opr(:,18,33,1)
-                  write(15,*) "psolve iter check main loop sim.f90: fs%psolv%it = ", fs%psolv%it
-                  write(15,*) "psolve error check main loop sim.f90: fs%psolv%rerr = ", fs%psolv%rerr
                   Write(15,*) ""
                   write(15,*) "fs%psolv%sol(18,33,1): ", fs%psolv%sol(18,33,1)
                   write(15,*) "Discrepancy cell: fs%psolv%sol(18,33,1): ", fs%psolv%sol(18,33,1)
@@ -1521,6 +1591,31 @@ contains
             call ens_out_smesh%write_data(time%t)
          end if
 
+         !AS debug
+         !if (.not.restarted)then
+         !   if ((time%n.eq.50).or.(time%n.eq.51).or.(time%n.eq.52)) then
+         !      write(15,*) "DEBUG E: after ensight output"
+         !      write(15,*) "Time iteration: ", time%n
+         !      write(15,*) "Physical Simulation time: ", time%t
+         !      write(15,*) "Timestep Size: ", time%dt
+         !      write(15,*) "U check main loop sim.f90: U(18,33,1) = ", fs%U(18,33,1)
+         !      write(15,*) "V check main loop sim.f90: V(18,33,1) = ", fs%V(18,33,1)
+         !      write(15,*) "P check main loop sim.f90: P(18,33,1) = ", fs%P(18,33,1)
+         !      write(15,*) "VOF check main loop sim.f90: VOF(18,33,1) = ", vf%VF(18,33,1)
+         !   end if
+         !else
+         !   if ((time%n.eq.0).or.(time%n.eq.1).or.(time%n.eq.2)) then
+         !      write(15,*) "DEBUG E: after ensight output"
+         !      write(15,*) "Time iteration: ", time%n
+         !      write(15,*) "Physical Simulation time: ", time%t
+         !      write(15,*) "Timestep Size: ", time%dt
+         !      write(15,*) "U check main loop sim.f90: U(18,33,1) = ", fs%U(18,33,1)
+         !      write(15,*) "V check main loop sim.f90: V(18,33,1) = ", fs%V(18,33,1)
+         !      write(15,*) "P check main loop sim.f90: P(18,33,1) = ", fs%P(18,33,1)
+         !      write(15,*) "VOF check main loop sim.f90: VOF(18,33,1) = ", vf%VF(18,33,1)
+         !   end if
+         !end if
+
          ! Perform and output monitoring
          call fs%get_max()
          call vf%get_max()
@@ -1604,9 +1699,6 @@ contains
                  call df%push(name='SL_x'   ,var=fs%sl_x   ) !AS save sensor data
                  call df%push(name='SL_y'   ,var=fs%sl_y   )
                  call df%push(name='SL_z'   ,var=fs%sl_z   )
-                 call df%push(name='Psol'   ,var=fs%psolv%sol)
-                 !call df%push(name='Prerr'  ,var=fs%psolv%rerr)
-                 !call df%push(name='Piter'  ,var=fs%psolv%it)
                  !call df%push(name='VOF'    ,var=vf%VF     ) ! do not save VOF, it will be calculated based on the interface during restart
                  call df%write(fdata='restart/data_'//trim(adjustl(timestamp)))
                  ! Deallocate
