@@ -1,0 +1,68 @@
+# Parallelization
+Partition : 1 1 1
+I/O partition: 1 1 1
+
+# Mesh definition
+Lx :	0.075#0.15   # end of the refined region
+Lx ref: 0.0 # start of the refined uniform region in x direction
+nx :	100 #340 
+nx stretch right: 0 #number of points to add at the right of domain for stretching
+nx stretch left:  0 #number of points to add at the left of domain for stretching
+Ly :	0.075#0.15
+ny :	100 #340 #******hardcoded in geo.f90 for init sim for right now**** #1      # number of cells in the uniform region
+ny stretch : 0 # number of cells to add for stretching (i.e. ny_total = 2*ny_stretch + ny)
+Lz : 	0.005
+nz:     1
+nz stretch : 0 # number of cells to add for stretching (i.e. nz_total = 2*nz_stretch + nz) 
+
+# Flow setup
+Droplet diameter :   0.022
+Droplet location :   0.033 0 0
+Shock location :     0.02 
+Mach number of shock :   2.4
+Pre-shock density :   1.204
+Pre-shock pressure :  1.01e5
+
+# init sim setup
+Profile extraction flag: false
+n_shock : 10   # shock profile points (left and right of center)
+Single phase shock location: 0.01     # singlephase simulation starting shock location
+Final shock location :       0.02     # singlephase simulation final shock location
+Max timestep size :          1e-7
+
+# Fluid properties
+Liquid dynamic viscosity :    0
+Gas dynamic viscosity :       0
+Liquid thermal conductivity : 0
+Gas thermal conductivity :    0
+Gas specific heat (constant vol): 717.6
+Liquid gamma :	      	     6.12
+Liquid Pref :		     3.43e8
+Liquid specific heat (constant vol): 4130.2
+Gas gamma : 		      1.4
+Liquid density :              1000
+Surface tension coefficient : 0.0
+
+# Time integration
+Multiphase max timestep size: 1e-7  #@REPLACE@
+Max cfl number :    0.5
+Max time :     	  1e-4 #5e-5 #1e-4
+Max steps :	  2 #1000000
+
+# Pressure solver
+Pressure tolerance : 1e-6
+Pressure iteration : 100
+
+# Implicit velocity solver
+Implicit tolerance : 1e-6
+Implicit iteration : 100
+
+# Ensight output
+Ensight output period :      1e-7
+Ensight smesh output period: 1e-5
+
+# Restart
+Restart output period : 1e-5
+Restart from : 5.00000E-05
+
+# add post processing into sim?
