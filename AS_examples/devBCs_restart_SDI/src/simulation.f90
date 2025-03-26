@@ -23,7 +23,7 @@ module simulation
    type(matm),        public :: matmod
    type(timetracker), public :: time
    type(hypre_str),   public :: ps
-   type(ddadi),   public :: vs !AS solver update 3-4-2025
+   type(ddadi),       public :: vs !AS solver update 3-4-2025
 
    !> Ensight postprocessing
    type(surfmesh) :: smesh
@@ -241,7 +241,7 @@ contains
       ! Initialize our VOF solver and field
       create_and_initialize_vof: block
          use mms_geom, only: cube_refine_vol
-         use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux
+         use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux,neumann
          use irl_fortran_interface !AS restart
          
          integer :: i,j,k,n,si,sj,sk
@@ -281,15 +281,21 @@ contains
                      end if
                   end do
                end do
-            end do
+            end do            
+            
             call vf%sync_interface() ! this syncs the interface across processors
             deallocate(P11,P12,P13,P14,P21,P22,P23,P24)
             ! Reset moments to guarantee compatibility with interface reconstruction
-            call vf%reset_volume_moments()! this resets volumetric moments based on the interface  
+            call vf%reset_volume_moments()! this resets volumetric moments based on the interface
 
-            if (cfg%iproc.eq.1) vf%VF(cfg%imino:cfg%imin-1,:,:)=0.0_WP ! this seems to work
+            ! AS try VOF BC here as Chase does it
+            if (cfg%iproc.eq.1) vf%VF(cfg%imino:cfg%imin-1,:,:)=0.0_WP 
             if (cfg%jproc.eq.cfg%npy) vf%VF(:,cfg%jmaxo:cfg%jmax+1,:)=0.0_WP
             if (cfg%jproc.eq.1) vf%VF(:,cfg%jmino:cfg%jmin-1,:)=0.0_WP
+            call vf%add_bcond(name='xright',type=neumann,locator=right_of_domain,dir='xp')
+            call vf%add_bcond(name='ytop',type=neumann,locator=top_of_domain,dir='yp')
+            call vf%add_bcond(name='ybottom',type=neumann,locator=bot_of_domain,dir='ym')
+            call vf%apply_bcond(time%t,time%dt)
 
             ! Update the band
             call vf%update_band() ! searches for a fluid interface and updates the band 
@@ -347,7 +353,6 @@ contains
                
             end if ! extract flag
             
-            ! Boundary conditions on VF are built into the mast solver
             ! Update the band
             call vf%update_band()
             ! Perform interface reconstruction from VOF field
@@ -364,6 +369,10 @@ contains
             call vf%get_curvature()
             ! Reset moments to guarantee compatibility with interface reconstruction
             call vf%reset_volume_moments()
+
+            call vf%add_bcond(name='ytop',type=neumann,locator=top_of_domain,dir='yp')
+            call vf%add_bcond(name='ybottom',type=neumann,locator=bot_of_domain,dir='ym')
+            call vf%apply_bcond(time%t,time%dt)
          end if ! no restart
        end block create_and_initialize_vof
 
@@ -662,14 +671,14 @@ contains
             
             ! define boundary conditions
             call fs%add_bcond(name= 'inflow',type=dirichlet      ,locator=left_of_domain ,face='x',dir=-1)
-            call fs%add_bcond(name='outflow',type=neumann,locator=right_of_domain,face='x',dir=+1)
-            call fs%add_bcond(name='outflow',type=neumann,locator=bot_of_domain,face='y',dir=-1)
-            call fs%add_bcond(name='outflow',type=neumann,locator=top_of_domain,face='y',dir=+1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=right_of_domain,face='x',dir=+1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bot_of_domain,face='y',dir=-1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=top_of_domain,face='y',dir=+1)
             !call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bck_of_domain,face='z',dir=-1)
             !call fs%add_bcond(name='outflow',type=clipped_neumann,locator=fnt_of_domain,face='z',dir=+1)
 
-            call vf%add_bcond(name='outflow',type=neumann,locator=bot_of_domain,dir='ym')
-            call vf%add_bcond(name='outflow',type=neumann,locator=top_of_domain,dir='yp')
+            !call vf%add_bcond(name='outflow',type=neumann,locator=bot_of_domain,dir='ym')
+            !call vf%add_bcond(name='outflow',type=neumann,locator=top_of_domain,dir='yp')
 
             ! Ensure that we are only on the boundaries
             ! inlet at left of domain
@@ -688,8 +697,8 @@ contains
                do k=cfg%kmino_,cfg%kmaxo_
                   do j=cfg%jmino_,cfg%jmaxo_
                      do i=cfg%imino,cfg%imin-1
-                       fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
-                      end do
+                        fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+                     end do
                   end do
                end do
                
@@ -707,6 +716,7 @@ contains
                         fs%Ui(i,j,k) = fs%Ui(cfg%imax_,j,k); fs%Vi(i,j,k) = fs%Vi(cfg%imax_,j,k); fs%Wi(i,j,k) = fs%Wi(cfg%imax_,j,k);
                         fs%rhoUi(i,j,k) = fs%rhoUi(cfg%imax_,j,k); fs%rhoVi(i,j,k) = fs%rhoVi(cfg%imax_,j,k); fs%rhoWi(i,j,k) = fs%rhoWi(cfg%imax_,j,k);
                         fs%Grho(i,j,k) = fs%Grho(cfg%imax_,j,k); fs%GP(i,j,k) = fs%GP(cfg%imax_,j,k)                        
+                        !fs%GrhoE(i,j,k) = fs%GrhoE(cfg%imax_,j,k); ! AS test
                         fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(cfg%imax_,j,k),fs%Grho(cfg%imax_,j,k),fs%U(cfg%imax_,j,k),fs%V(cfg%imax_,j,k),fs%W(cfg%imax_,j,k),'gas')
                         fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
             
@@ -721,60 +731,14 @@ contains
                
             end if
 
-            print*, "jmino ", cfg%jmino
-            print*, "jmin_", cfg%jmin_
-            print*, "jmin ", cfg%jmin
-
-            print*, "jmaxo ", cfg%jmaxo
-            print*, "jmax_", cfg%jmax_
-            print*, "jmax ", cfg%jmax
-
-            !AS debug
-            !do j=cfg%jmax+1,cfg%jmaxo
-            !   print*, "DEBUG A"
-            !   print*, "cfg%jmax+1,cfg%jmaxo j = ", j
-            !   print*, "U(1,j,1): ", fs%U(:,j,1)
-            !   print*, "V(1,j,1): ", fs%V(:,j,1)
-            !   print*, "Ui(1,j,1): ", fs%Ui(:,j,1)
-            !   print*, "Vi(1,j,1): ", fs%Vi(:,j,1)
-            !   print*, "Grho(1,j,1): ", fs%Grho(:,j,1)
-            !   print*, "GP(1,j,1): ", fs%GP(:,j,1)
-            !   print*, "Tmptr(1,j,1): ", fs%Tmptr(:,j,1)
-            !   print*, "VOF(1,j,1): ", vf%VF(:,j,1)
-            !   print*, "RHOSS2(1,j,1): ", fs%RHOSS2(:,j,1)
-            !   print*, "GrhoE(1,j,1): ", fs%GrhoE(:,j,1)
-            !   print*, "GrhoSS2(1,j,1): ", fs%GrhoSS2(:,j,1)
-            !   print*, "vf%curv(1,j,1): ", vf%curv(:,j,1)
-            !end do
-
-            !do j=cfg%jmino,cfg%jmin-1
-            !   print*, "DEBUG AA"
-            !   print*, "cfg%jmino,cfg%jmin-1 j = ", j
-            !   print*, "U(1,j,1): ", fs%U(:,j,1)
-            !   print*, "V(1,j,1): ", fs%V(:,j,1)
-            !   print*, "Ui(1,j,1): ", fs%Ui(:,j,1)
-            !   print*, "Vi(1,j,1): ", fs%Vi(:,j,1)
-            !   print*, "Grho(1,j,1): ", fs%Grho(:,j,1)
-            !   print*, "GP(1,j,1): ", fs%GP(:,j,1)
-            !   print*, "Tmptr(1,j,1): ", fs%Tmptr(:,j,1)
-            !   print*, "VOF(1,j,1): ", vf%VF(:,j,1)
-            !   print*, "RHOSS2(1,j,1): ", fs%RHOSS2(:,j,1)
-            !   print*, "GrhoE(1,j,1): ", fs%GrhoE(:,j,1)
-            !   print*, "GrhoSS2(1,j,1): ", fs%GrhoSS2(:,j,1)
-            !   print*, "vf%curv(1,j,1): ", vf%curv(:,j,1)
-            !end do
-
             ! outlet at bottom of domain
             if (cfg%jproc.eq.1) then ! apply (neumann) outlet condition
                do k=cfg%kmino_,cfg%kmaxo_
                   do j=cfg%jmino,cfg%jmin-1
                      do i=cfg%imino_,cfg%imaxo_
-                        fs%U(i,j,k) = fs%U(i,cfg%jmin_,k); fs%V(i,j,k) = fs%V(i,cfg%jmin_,k)
-                        fs%W(i,j,k) = fs%W(i,cfg%jmin_,k);
-                        fs%Ui(i,j,k) = fs%Ui(i,cfg%jmin_,k); fs%Vi(i,j,k) = fs%Vi(i,cfg%jmin_,k)
-                        fs%Wi(i,j,k) = fs%Wi(i,cfg%jmin_,k);
-                        fs%rhoUi(i,j,k) = fs%rhoUi(i,cfg%jmin_,k); fs%rhoVi(i,j,k) = fs%rhoVi(i,cfg%jmin_,k)
-                        fs%rhoWi(i,j,k) = fs%rhoWi(i,cfg%jmin_,k);
+                        fs%U(i,j,k) = fs%U(i,cfg%jmin_,k); fs%V(i,j,k) = fs%V(i,cfg%jmin_,k); fs%W(i,j,k) = fs%W(i,cfg%jmin_,k);
+                        fs%Ui(i,j,k) = fs%Ui(i,cfg%jmin_,k); fs%Vi(i,j,k) = fs%Vi(i,cfg%jmin_,k); fs%Wi(i,j,k) = fs%Wi(i,cfg%jmin_,k);
+                        fs%rhoUi(i,j,k) = fs%rhoUi(i,cfg%jmin_,k); fs%rhoVi(i,j,k) = fs%rhoVi(i,cfg%jmin_,k); fs%rhoWi(i,j,k) = fs%rhoWi(i,cfg%jmin_,k);
                         fs%Grho(i,j,k) = fs%Grho(i,cfg%jmin_,k); fs%GP(i,j,k) = fs%GP(i,cfg%jmin_,k)
                         fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,cfg%jmin_,k),fs%Grho(i,cfg%jmin_,k),fs%U(i,cfg%jmin_,k),fs%V(i,cfg%jmin_,k),fs%W(i,cfg%jmin_,k),'gas')                        
                         fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
@@ -783,7 +747,7 @@ contains
                         fs%PA(i,j,k) = fs%PA(i,cfg%jmin_,k)
 
                         ! set nuemann condition on VOF
-                        vf%VF(i,j,k) = 0.0_WP !vf%VF(i,cfg%jmin_,k)
+                        vf%VF(i,j,k) = vf%VF(i,cfg%jmin_,k)
 
                      end do
                   end do
@@ -791,19 +755,16 @@ contains
             end if
 
             !!! issue
-            ! initial condition (for restart) looks good, after 1 timestep, VOF increases by ~1e-10 and Tmptr becomes Nan at 1 cell within
-            !top and bottom boundaries. I'm not sure what's causing this but maybe I'm overlooking something? 3/14/2025
-
+            ! boundary reflections at the top and bottom
+            
             ! outlet at top of domain
             if (cfg%jproc.eq.cfg%npy) then ! apply (neumann) outlet condition
                do k=cfg%kmino_,cfg%kmaxo_
                   do j=cfg%jmax+1,cfg%jmaxo
                      do i=cfg%imino_,cfg%imaxo_
-                        fs%U(i,j,k) = fs%U(i,cfg%jmax_,k); fs%V(i,j,k) = fs%V(i,cfg%jmax_,k)
-                        fs%W(i,j,k) = fs%W(i,cfg%jmax_,k);
-                        fs%Ui(i,j,k) = fs%Ui(i,cfg%jmax_,k); fs%Vi(i,j,k) = fs%Vi(i,cfg%jmax_,k)
-                        fs%Wi(i,j,k) = fs%Wi(i,cfg%jmax_,k);
-                        fs%rhoUi(i,j,k) = fs%rhoUi(i,cfg%jmax_,k); fs%rhoVi(i,j,k) = fs%rhoVi(i,cfg%jmax_,k); fs%rhoWi(i,j,k) = fs%rhoWi(i,cfg%jmax_,k);
+                        fs%U(i,j,k) = fs%U(i,cfg%jmax_,k); fs%V(i,j,k) = fs%V(i,cfg%jmax_,k); fs%W(i,j,k) = fs%W(i,cfg%jmax_,k);
+                        fs%Ui(i,j,k) = fs%Ui(i,cfg%jmax_,k); fs%Vi(i,j,k) = fs%Vi(i,cfg%jmax_,k); fs%Wi(i,j,k) = fs%Wi(i,cfg%jmax_,k);
+                        fs%rhoUi(i,j,k) =fs%rhoUi(i,cfg%jmax_,k); fs%rhoVi(i,j,k) = fs%rhoVi(i,cfg%jmax_,k); fs%rhoWi(i,j,k) = fs%rhoWi(i,cfg%jmax_,k);
                         fs%Grho(i,j,k) = fs%Grho(i,cfg%jmax_,k); fs%GP(i,j,k) = fs%GP(i,cfg%jmax_,k)
                         fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,cfg%jmax_,k),fs%Grho(i,cfg%jmax_,k),fs%U(i,cfg%jmax_,k),fs%V(i,cfg%jmax_,k),fs%W(i,cfg%jmax_,k),'gas')
 
@@ -813,81 +774,12 @@ contains
                         fs%PA(i,j,k) = fs%PA(i,cfg%jmax_,k)
             
                         ! set nuemann condition on VOF
-                        vf%VF(i,j,k) = 0.0_WP !vf%VF(i,cfg%jmax_,k)
-
+                        vf%VF(i,j,k) = vf%VF(i,cfg%jmax_,k)
+            
                      end do
                   end do
                end do
             end if
-
-            do i=cfg%imino_,cfg%imaxo_
-               !print*, "i = ", i
-               do j = cfg%jmino_,cfg%jmaxo_
-                  !print*, "j = ", j
-                  if ((cfg%xm(i).gt.0.019875 - 1e-5).and.(cfg%xm(i).lt.0.019875 + 1e-5))then
-                     if ((cfg%ym(j).gt.0.037125 - 1e-5).and.(cfg%ym(j).lt.0.037125 + 1e-5))then
-                        print*, "X-coordinate found at: ", cfg%xm(i)
-                        print*, "Y-coordinate found at: ", cfg%ym(j)
-                        print*, "i and j values: ", i,j
-                     end if
-                  end if
-               end do
-            end do
-
-            !print*, "In the ghost cells"
-            !do j = 101,103
-            !   print*, "j = ", j
-            !   print*, "VOF(27,j,1): ", vf%VF(27,j,1)
-            !   print*, "U(27,j,1) face value: ", fs%U(27,j,1)
-            !   print*, "Ui(27,j,1) cell value: ", fs%Ui(27,j,1)
-            !   print*, "V(27,j,1) face value: ", fs%V(27,j,1)
-            !   print*, "Vi(27,j,1) cell value: ", fs%Vi(27,j,1)
-            !end do
-
-            !print*, "In the physical cells"
-            !do j = 95,100
-            !   print*, "j = ", j
-            !   print*, "VOF(27,j,1): ", vf%VF(27,j,1)
-            !   print*, "U(27,j,1) face value: ", fs%U(27,j,1)
-            !   print*, "Ui(27,j,1) cell value: ", fs%Ui(27,j,1)
-            !   print*, "V(27,j,1) face value: ", fs%V(27,j,1)
-            !   print*, "Vi(27,j,1) cell value: ", fs%Vi(27,j,1)
-            !end do
-
-            !AS debug
-            !do j=cfg%jmax+1,cfg%jmaxo
-            !   print*, "DEBUG B"
-            !   print*, "cfg%jmax+1,cfg%jmaxo j = ", j
-            !   print*, "U(1,j,1): ", fs%U(:,j,1)
-            !   print*, "V(1,j,1): ", fs%V(:,j,1)
-            !   print*, "Ui(1,j,1): ", fs%Ui(:,j,1)
-            !   print*, "Vi(1,j,1): ", fs%Vi(:,j,1)
-            !   print*, "Grho(1,j,1): ", fs%Grho(:,j,1)
-            !   print*, "GP(1,j,1): ", fs%GP(:,j,1)
-            !   print*, "Tmptr(1,j,1): ", fs%Tmptr(:,j,1)
-            !   print*, "VOF(1,j,1): ", vf%VF(:,j,1)
-            !   print*, "RHOSS2(1,j,1): ", fs%RHOSS2(:,j,1)
-            !   print*, "GrhoE(1,j,1): ", fs%GrhoE(:,j,1)
-            !   print*, "GrhoSS2(1,j,1): ", fs%GrhoSS2(:,j,1)
-            !   print*, "vf%curv(1,j,1): ", vf%curv(:,j,1)
-            !end do
-
-            !do j=cfg%jmino,cfg%jmin-1
-            !   print*, "DEBUG BB"
-            !   print*, "cfg%jmino,cfg%jmin-1 j = ", j
-            !   print*, "U(1,j,1): ", fs%U(:,j,1)
-            !   print*, "V(1,j,1): ", fs%V(:,j,1)
-            !   print*, "Ui(1,j,1): ", fs%Ui(:,j,1)
-            !   print*, "Vi(1,j,1): ", fs%Vi(:,j,1)
-            !   print*, "Grho(1,j,1): ", fs%Grho(:,j,1)
-            !   print*, "GP(1,j,1): ", fs%GP(:,j,1)
-            !   print*, "Tmptr(1,j,1): ", fs%Tmptr(:,j,1)
-            !   print*, "VOF(1,j,1): ", vf%VF(:,j,1)
-            !   print*, "RHOSS2(1,j,1): ", fs%RHOSS2(:,j,1)
-            !   print*, "GrhoE(1,j,1): ", fs%GrhoE(:,j,1)
-            !   print*, "GrhoSS2(1,j,1): ", fs%GrhoSS2(:,j,1)
-            !   print*, "vf%curv(1,j,1): ", vf%curv(:,j,1)
-            !end do
 
             ! outlet at back of domain
             !if (cfg%kproc.eq.1) then ! apply (neumann) outlet condition
@@ -938,7 +830,7 @@ contains
             ! Apply face BC - outflow
             bc_scope = 'velocity'
             call fs%apply_bcond(time%dt,bc_scope)
-            call vf%apply_bcond(time%t,time%dt)
+            !call vf%apply_bcond(time%t,time%dt)
 
          end if
          
@@ -994,6 +886,8 @@ contains
          call ens_out%add_scalar('GP',fs%GP) 
          call ens_out%add_scalar('LrhoE',fs%LrhoE) 
          call ens_out%add_scalar('GrhoE',fs%GrhoE)
+         call ens_out%add_vector('face_vel',fs%U,fs%V,fs%W) !AS DEBUG
+         call ens_out%add_scalar('VF_flux',fs%F_VF) !AS DEBUG
          
          ! Output to ensight
          if (ens_evt%occurs()) call ens_out%write_data(time%t)
@@ -1085,9 +979,6 @@ contains
 
          ! Reinitialize phase pressure by syncing it with conserved phase energy
          call fs%reinit_phase_pressure(vf,matmod)
-         print*, "DEBUG A: after reinit phase pressure"
-         print*, "***Time step***: ", time%n
-         print*, "VOF(27,100,1): ", vf%VF(27,100,1)
          fs%Uiold=fs%Ui; fs%Viold=fs%Vi; fs%Wiold=fs%Wi
          fs%RHOold = fs%RHO
 
@@ -1099,14 +990,8 @@ contains
          ! Remember old interface, including VF and barycenters
          call vf%copy_interface_to_old()
 
-         print*, "DEBUG B: after copy interface"
-         print*, "VOF(27,100,1): ", vf%VF(27,100,1)
-
          ! Create in-cell reconstruction
          call fs%flow_reconstruct(vf)
-
-         print*, "DEBUG C: after flow reconstruct"
-         print*, "VOF(27,100,1): ", vf%VF(27,100,1)
 
          ! Zero variables that will change during subiterations
          fs%P = 0.0_WP
@@ -1122,29 +1007,17 @@ contains
             ! Predictor step, involving advection and pressure terms
             call fs%advection_step(time%dt,vf,matmod)
 
-            print*, "DEBUG D: after advection step"
-            print*, "VOF(27,100,1): ", vf%VF(27,100,1) 
-            
             ! Viscous step
             call fs%diffusion_src_explicit_step(time%dt,vf,matmod)
 
-            print*, "DEBUG E: after diffusion step"
-            print*, "VOF(27,100,1): ", vf%VF(27,100,1)
-
             ! Prepare pressure projection
             call fs%pressureproj_prepare(time%dt,vf,matmod)
-
-            !print*, "DEBUG F: after pressure prepare step"
-            !print*, "VOF(27,100,1): ", vf%VF(27,100,1)
 
             ! Initialize and solve Helmholtz equation
             call fs%psolv%setup()
             fs%psolv%sol=fs%PA-fs%P
             call fs%psolv%solve()
             call fs%cfg%sync(fs%psolv%sol)
-
-            !print*, "DEBUG G: after pressure solve block"
-            !print*, "VOF(27,100,1): ", vf%VF(27,100,1)
 
             ! Perform corrector step using solution
             fs%P=fs%P+fs%psolv%sol
