@@ -288,13 +288,17 @@ contains
             ! Reset moments to guarantee compatibility with interface reconstruction
             call vf%reset_volume_moments()! this resets volumetric moments based on the interface
 
-            ! AS try VOF BC here as Chase does it
+            ! ensure boundaries are correct
             if (cfg%iproc.eq.1) vf%VF(cfg%imino:cfg%imin-1,:,:)=0.0_WP 
             if (cfg%jproc.eq.cfg%npy) vf%VF(:,cfg%jmaxo:cfg%jmax+1,:)=0.0_WP
             if (cfg%jproc.eq.1) vf%VF(:,cfg%jmino:cfg%jmin-1,:)=0.0_WP
+            if (cfg%kproc.eq.1) vf%VF(:,:,cfg%kmino:cfg%kmin-1)=0.0_WP
+            if (cfg%kproc.eq.cfg%npz) vf%VF(:,:,cfg%kmaxo:cfg%kmax+1)=0.0_WP
             call vf%add_bcond(name='xright',type=neumann,locator=right_of_domain,dir='xp')
             call vf%add_bcond(name='ytop',type=neumann,locator=top_of_domain,dir='yp')
             call vf%add_bcond(name='ybottom',type=neumann,locator=bot_of_domain,dir='ym')
+            call vf%add_bcond(name='zfront',type=neumann,locator=fnt_of_domain,dir='zp')
+            call vf%add_bcond(name='zback',type=neumann,locator=bck_of_domain,dir='zm')
             call vf%apply_bcond(time%t,time%dt)
 
             ! Update the band
@@ -372,6 +376,8 @@ contains
 
             call vf%add_bcond(name='ytop',type=neumann,locator=top_of_domain,dir='yp')
             call vf%add_bcond(name='ybottom',type=neumann,locator=bot_of_domain,dir='ym')
+            call vf%add_bcond(name='zfront',type=neumann,locator=fnt_of_domain,dir='zp')
+            call vf%add_bcond(name='zback',type=neumann,locator=bck_of_domain,dir='zm')
             call vf%apply_bcond(time%t,time%dt)
          end if ! no restart
        end block create_and_initialize_vof
@@ -602,8 +608,8 @@ contains
             call fs%add_bcond(name='outflow',type=clipped_neumann,locator=right_of_domain,face='x',dir=+1)
             call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bot_of_domain,face='y',dir=-1)
             call fs%add_bcond(name='outflow',type=clipped_neumann,locator=top_of_domain,face='y',dir=+1)
-            !call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bck_of_domain,face='z',dir=-1)
-            !call fs%add_bcond(name='outflow',type=clipped_neumann,locator=fnt_of_domain,face='z',dir=+1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bck_of_domain,face='z',dir=-1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=fnt_of_domain,face='z',dir=+1)
 
             ! Calculate face velocities
             call fs%interp_vel_basic(vf,fs%Ui,fs%Vi,fs%Wi,fs%U,fs%V,fs%W)
@@ -624,7 +630,6 @@ contains
             fs%rhoUi = fs%RHO*fs%Ui; fs%rhoVi = fs%RHO*fs%Vi; fs%rhoWi = fs%RHO*fs%Wi
             
             ! Perform initial pressure relax
-            !relax_model = mech_egy_mech_hhz
             call fs%pressure_relax(vf,matmod,relax_model)
             
             ! Calculate initial phase and bulk moduli
@@ -674,11 +679,8 @@ contains
             call fs%add_bcond(name='outflow',type=clipped_neumann,locator=right_of_domain,face='x',dir=+1)
             call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bot_of_domain,face='y',dir=-1)
             call fs%add_bcond(name='outflow',type=clipped_neumann,locator=top_of_domain,face='y',dir=+1)
-            !call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bck_of_domain,face='z',dir=-1)
-            !call fs%add_bcond(name='outflow',type=clipped_neumann,locator=fnt_of_domain,face='z',dir=+1)
-
-            !call vf%add_bcond(name='outflow',type=neumann,locator=bot_of_domain,dir='ym')
-            !call vf%add_bcond(name='outflow',type=neumann,locator=top_of_domain,dir='yp')
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bck_of_domain,face='z',dir=-1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=fnt_of_domain,face='z',dir=+1)
 
             ! Ensure that we are only on the boundaries
             ! inlet at left of domain
@@ -767,7 +769,6 @@ contains
                         fs%rhoUi(i,j,k) =fs%rhoUi(i,cfg%jmax_,k); fs%rhoVi(i,j,k) = fs%rhoVi(i,cfg%jmax_,k); fs%rhoWi(i,j,k) = fs%rhoWi(i,cfg%jmax_,k);
                         fs%Grho(i,j,k) = fs%Grho(i,cfg%jmax_,k); fs%GP(i,j,k) = fs%GP(i,cfg%jmax_,k)
                         fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,cfg%jmax_,k),fs%Grho(i,cfg%jmax_,k),fs%U(i,cfg%jmax_,k),fs%V(i,cfg%jmax_,k),fs%W(i,cfg%jmax_,k),'gas')
-
                         fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
             
                         fs%P(i,j,k) = fs%P(i,cfg%jmax_,k)
@@ -782,55 +783,54 @@ contains
             end if
 
             ! outlet at back of domain
-            !if (cfg%kproc.eq.1) then ! apply (neumann) outlet condition
-            !   do k=cfg%kmino,cfg%kmin-1
-            !      do j=cfg%jmino_,cfg%jmaxo_
-            !         do i=cfg%imino_,cfg%imaxo_
-            !            fs%U(i,j,k) = fs%U(i,j,cfg%kmin_); fs%V(i,j,k) = fs%V(i,j,cfg%kmin_); fs%W(i,j,k) = fs%W(i,j,cfg%kmin_);
-            !            fs%Ui(i,j,k) = fs%Ui(i,j,cfg%kmin_); fs%Vi(i,j,k) = fs%Vi(i,j,cfg%kmin_); fs%Wi(i,j,k) = fs%Wi(i,j,cfg%kmin_);
-            !            fs%rhoUi(i,j,k) = fs%rhoUi(i,j,cfg%kmin_); fs%rhoVi(i,j,k) = fs%rhoVi(i,j,cfg%kmin_); fs%rhoWi(i,j,k) = fs%rhoWi(i,j,cfg%kmin_);
-            !            fs%Grho(i,j,k) = fs%Grho(i,j,cfg%kmin_); fs%GP(i,j,k) = fs%GP(i,j,cfg%kmin_)
-            !            fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,j,cfg%kmin_),fs%Grho(i,j,cfg%kmin_),fs%U(i,j,cfg%kmin_),fs%V(i,j,cfg%kmin_),fs%W(i,j,cfg%kmin_),'gas')
-            !            fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
-            !
-            !            fs%P(i,j,k) = fs%P(i,j,cfg%kmin_)
-            !            fs%PA(i,j,k) = fs%PA(i,j,cfg%kmin_)
-            !
-            !            ! set nuemann condition on VOF
-            !            vf%VF(i,j,k) = vf%VF(i,j,cfg%kmin_)
-            !         end do
-            !      end do
-            !   end do
-            !end if
+            if (cfg%kproc.eq.1) then ! apply (neumann) outlet condition
+               do k=cfg%kmino,cfg%kmin-1
+                  do j=cfg%jmino_,cfg%jmaxo_
+                     do i=cfg%imino_,cfg%imaxo_
+                        fs%U(i,j,k) = fs%U(i,j,cfg%kmin_); fs%V(i,j,k) = fs%V(i,j,cfg%kmin_); fs%W(i,j,k) = fs%W(i,j,cfg%kmin_);
+                        fs%Ui(i,j,k) = fs%Ui(i,j,cfg%kmin_); fs%Vi(i,j,k) = fs%Vi(i,j,cfg%kmin_); fs%Wi(i,j,k) = fs%Wi(i,j,cfg%kmin_);
+                        fs%rhoUi(i,j,k) = fs%rhoUi(i,j,cfg%kmin_); fs%rhoVi(i,j,k) = fs%rhoVi(i,j,cfg%kmin_); fs%rhoWi(i,j,k) = fs%rhoWi(i,j,cfg%kmin_);
+                        fs%Grho(i,j,k) = fs%Grho(i,j,cfg%kmin_); fs%GP(i,j,k) = fs%GP(i,j,cfg%kmin_)
+                        fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,j,cfg%kmin_),fs%Grho(i,j,cfg%kmin_),fs%U(i,j,cfg%kmin_),fs%V(i,j,cfg%kmin_),fs%W(i,j,cfg%kmin_),'gas')
+                        fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+            
+                        fs%P(i,j,k) = fs%P(i,j,cfg%kmin_)
+                        fs%PA(i,j,k) = fs%PA(i,j,cfg%kmin_)
+            
+                        ! set nuemann condition on VOF
+                        vf%VF(i,j,k) = vf%VF(i,j,cfg%kmin_)
+                     end do
+                  end do
+               end do
+            end if
 
             ! outlet at front of domain
-            !if (cfg%kproc.eq.cfg%npz) then ! apply (neumann) outlet condition
-            !   do k=cfg%kmax+1,cfg%kmaxo
-            !      do j=cfg%jmino_,cfg%jmaxo_
-            !         do i=cfg%imino_,cfg%imaxo_
-            !            fs%U(i,j,k) = fs%U(i,j,cfg%kmax_); fs%V(i,j,k) = fs%V(i,j,cfg%kmax_); fs%W(i,j,k) = fs%W(i,j,cfg%kmax_);
-            !            fs%Ui(i,j,k) = fs%Ui(i,j,cfg%kmax_); fs%Vi(i,j,k) = fs%Vi(i,j,cfg%kmax_); fs%Wi(i,j,k) = fs%Wi(i,j,cfg%kmax_);
-            !            fs%rhoUi(i,j,k) = fs%rhoUi(i,j,cfg%kmax_); fs%rhoVi(i,j,k) = fs%rhoVi(i,j,cfg%kmax_); fs%rhoWi(i,j,k) = fs%rhoWi(i,j,cfg%kmax_);
-            !            fs%Grho(i,j,k) = fs%Grho(i,j,cfg%kmax_); fs%GP(i,j,k) = fs%GP(i,j,cfg%kmax_)
-            !            fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,j,cfg%kmax_),fs%Grho(i,j,cfg%kmax_),fs%U(i,j,cfg%kmax_),fs%V(i,j,cfg%kmax_),fs%W(i,j,cfg%kmax_),'gas')
-            !            fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
-            !
-            !            fs%P(i,j,k) = fs%P(i,j,cfg%kmax_)
-            !            fs%PA(i,j,k) = fs%PA(i,j,cfg%kmax_)
-            !
-            !            ! set nuemann condition on VOF
-            !            vf%VF(i,j,k) = vf%VF(i,j,cfg%kmax_)
-            !         end do
-            !      end do
-            !   end do
-            !end if
+            if (cfg%kproc.eq.cfg%npz) then ! apply (neumann) outlet condition
+               do k=cfg%kmax+1,cfg%kmaxo
+                  do j=cfg%jmino_,cfg%jmaxo_
+                     do i=cfg%imino_,cfg%imaxo_
+                        fs%U(i,j,k) = fs%U(i,j,cfg%kmax_); fs%V(i,j,k) = fs%V(i,j,cfg%kmax_); fs%W(i,j,k) = fs%W(i,j,cfg%kmax_);
+                        fs%Ui(i,j,k) = fs%Ui(i,j,cfg%kmax_); fs%Vi(i,j,k) = fs%Vi(i,j,cfg%kmax_); fs%Wi(i,j,k) = fs%Wi(i,j,cfg%kmax_);
+                        fs%rhoUi(i,j,k) = fs%rhoUi(i,j,cfg%kmax_); fs%rhoVi(i,j,k) = fs%rhoVi(i,j,cfg%kmax_); fs%rhoWi(i,j,k) = fs%rhoWi(i,j,cfg%kmax_);
+                        fs%Grho(i,j,k) = fs%Grho(i,j,cfg%kmax_); fs%GP(i,j,k) = fs%GP(i,j,cfg%kmax_)
+                        fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,j,cfg%kmax_),fs%Grho(i,j,cfg%kmax_),fs%U(i,j,cfg%kmax_),fs%V(i,j,cfg%kmax_),fs%W(i,j,cfg%kmax_),'gas')
+                        fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+            
+                        fs%P(i,j,k) = fs%P(i,j,cfg%kmax_)
+                        fs%PA(i,j,k) = fs%PA(i,j,cfg%kmax_)
+            
+                        ! set nuemann condition on VOF
+                        vf%VF(i,j,k) = vf%VF(i,j,cfg%kmax_)
+                     end do
+                  end do
+               end do
+            end if
 
             call matmod%update_temperature(VF,fs%Tmptr)
             
             ! Apply face BC - outflow
             bc_scope = 'velocity'
             call fs%apply_bcond(time%dt,bc_scope)
-            !call vf%apply_bcond(time%t,time%dt)
 
          end if
          
