@@ -23,7 +23,7 @@ module simulation
    type(matm),        public :: matmod
    type(timetracker), public :: time
    type(hypre_str),   public :: ps
-   type(ddadi),       public :: vs !AS solver update 3-4-2025
+   type(ddadi),       public :: vs 
 
    !> Ensight postprocessing
    type(surfmesh) :: smesh
@@ -47,7 +47,6 @@ module simulation
    integer  :: n_shock
    real(WP) :: tshock,final_xshock,delta,start_xshock
 
-   !AS restart
    !>Provide a pardata and an event tracker for saving restarts
    type(event)   :: save_evt
    type(pardata) :: df
@@ -153,7 +152,8 @@ contains
          call param_read('Max timestep size',time%dtmax)
          call param_read('Max cfl number',time%cflmax)
 
-         if (extract_flag.eqv.(.true.)) then ! singlephase simulation
+         ! Numerical shock profile extraction
+         if (extract_flag.eqv.(.true.)) then 
             call param_read('Single phase shock location',start_xshock)
             call param_read('Gas gamma',gamm_g)
             call param_read('Final shock location',final_xshock) !final singlephase shock location
@@ -168,12 +168,14 @@ contains
             vshock = -Ma1 * sqrt(gamm_g*GP1/Grho1) + Ma*sqrt(gamm_g*GP0/Grho0)
             relshockvel = -Grho1*vshock/(Grho0-Grho1)
 
-            time%tmax = (final_xshock - start_xshock) / relshockvel ! calculate final singlephase time based on final shock position
+            ! calculate final shock time based on final shock position
+            time%tmax = (final_xshock - start_xshock) / relshockvel 
             if (cfg%amRoot)then
-               print*, "Singlephase ending time: ", time%tmax
+               print*, "Shock initialization ending time: ", time%tmax
             end if
 
-         else if (extract_flag.eqv.(.false.)) then ! multiphase simulation with extracted shock profile
+         else if (extract_flag.eqv.(.false.)) then
+            ! numerically initialized shock profile
             call param_read('Max time',time%tmax)
             call param_read('Multiphase max timestep size',time%dtmax)
             if (cfg%amRoot)then
@@ -186,7 +188,6 @@ contains
          time%itmax=2
       end block initialize_timetracker
 
-      !AS restart
       ! Handle restart and saves here
       restart_and_save: block
         use string,  only: str_medium
@@ -212,9 +213,8 @@ contains
               ! we are restarting, read file
               call df%initialize(pg=cfg,iopartition=iopartition,fdata='restart/data_'//trim(adjustl(timestamp)))
            else
-              !print*, 'Creating directory for restart files, not restarting.' !AS working
               if (cfg%amRoot) then
-                 if(.not.isdir('restart')) call makedir('restart') !AS working
+                 if(.not.isdir('restart')) call makedir('restart') 
               end if
               
               ! prepare pardata object for saving restart files
@@ -226,7 +226,6 @@ contains
         end if
       end block restart_and_save
 
-      !AS restart
       ! revisit timetracker to adjust the time and time step values if restarting
       update_timetracker: block
         if (extract_flag.eqv.(.false.)) then ! only run restart capability for multiphase sims
@@ -242,20 +241,19 @@ contains
       create_and_initialize_vof: block
          use mms_geom, only: cube_refine_vol
          use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux,neumann
-         use irl_fortran_interface !AS restart
+         use irl_fortran_interface 
          
          integer :: i,j,k,n,si,sj,sk
          real(WP), dimension(3,8) :: cube_vertex
          real(WP), dimension(3) :: v_cent,a_cent
          real(WP) :: vol,area
          integer, parameter :: amr_ref_lvl=4
-         real(WP), dimension(:,:,:), allocatable :: P11,P12,P13,P14 !AS restart, planes for interface reconstruction
+         real(WP), dimension(:,:,:), allocatable :: P11,P12,P13,P14 
          real(WP), dimension(:,:,:), allocatable :: P21,P22,P23,P24
          
          ! Create a VOF solver with lvira reconstruction
-         call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF') !AS solver update 3-4-2025
+         call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
 
-         !AS restart
          ! initialize the interface including restarts         
          if (restarted)then
             ! Read in the planes directly and set the IRL interface
@@ -288,17 +286,20 @@ contains
             ! Reset moments to guarantee compatibility with interface reconstruction
             call vf%reset_volume_moments()! this resets volumetric moments based on the interface
 
-            ! ensure boundaries are correct
+            ! ensure ghost cells are correct
             if (cfg%iproc.eq.1) vf%VF(cfg%imino:cfg%imin-1,:,:)=0.0_WP 
             if (cfg%jproc.eq.cfg%npy) vf%VF(:,cfg%jmaxo:cfg%jmax+1,:)=0.0_WP
             if (cfg%jproc.eq.1) vf%VF(:,cfg%jmino:cfg%jmin-1,:)=0.0_WP
             if (cfg%kproc.eq.1) vf%VF(:,:,cfg%kmino:cfg%kmin-1)=0.0_WP
             if (cfg%kproc.eq.cfg%npz) vf%VF(:,:,cfg%kmaxo:cfg%kmax+1)=0.0_WP
+
+            ! add boundary conditions on VOF
             call vf%add_bcond(name='xright',type=neumann,locator=right_of_domain,dir='xp')
             call vf%add_bcond(name='ytop',type=neumann,locator=top_of_domain,dir='yp')
             call vf%add_bcond(name='ybottom',type=neumann,locator=bot_of_domain,dir='ym')
             call vf%add_bcond(name='zfront',type=neumann,locator=fnt_of_domain,dir='zp')
             call vf%add_bcond(name='zback',type=neumann,locator=bck_of_domain,dir='zm')
+            ! apply boundary conditions on VOF
             call vf%apply_bcond(time%t,time%dt)
 
             ! Update the band
@@ -319,7 +320,6 @@ contains
             ! Initialize liquid
             if (extract_flag.eqv.(.true.)) then ! if singlephase set VOF to 0.0
                vf%VF = 0.0_WP
-
             else if (extract_flag.eqv.(.false.)) then ! otherwise, initialize droplet based on diameter
                call param_read('Droplet diameter',ddrop)
                call param_read('Droplet location',dctr)
@@ -374,19 +374,22 @@ contains
             ! Reset moments to guarantee compatibility with interface reconstruction
             call vf%reset_volume_moments()
 
+            ! add boundary conditions on VOF
+            call vf%add_bcond(name='xright',type=neumann,locator=right_of_domain,dir='xp')
             call vf%add_bcond(name='ytop',type=neumann,locator=top_of_domain,dir='yp')
             call vf%add_bcond(name='ybottom',type=neumann,locator=bot_of_domain,dir='ym')
             call vf%add_bcond(name='zfront',type=neumann,locator=fnt_of_domain,dir='zp')
             call vf%add_bcond(name='zback',type=neumann,locator=bck_of_domain,dir='zm')
+            ! apply boundary conditions on VOF
             call vf%apply_bcond(time%t,time%dt)
-         end if ! no restart
+         end if 
        end block create_and_initialize_vof
 
       ! Create a compressible two-phase flow solver
       create_and_initialize_flow_solver: block
          use mast_class,      only: clipped_neumann,dirichlet,bc_scope,bcond,mech_egy_mech_hhz,neumann
-         use hypre_str_class, only: pcg_pfmg2 !AS solver update 3-4-2025
-         use ddadi_class,     only: ddadi !AS solver update 3-4-2025
+         use hypre_str_class, only: pcg_pfmg2 ! preconditioned conjugate gradient method for pressure
+         use ddadi_class,     only: ddadi ! diagonal dominant alternating direction implicit method for velocity
          use mathtools,       only: Pi
          use parallel,        only: amRoot
          use messager,        only: die
@@ -425,6 +428,7 @@ contains
          ! Create flow solver
          fs=mast(cfg=cfg,name='Two-phase All-Mach',vf=vf)
 
+         ! get viscosity, thermal conductivity, and specific heat for phases
          call param_read('Liquid dynamic viscosity',visc_l)
          call param_read('Gas dynamic viscosity',visc_g)
          call param_read('Liquid thermal conductivity',kappa_l)
@@ -441,13 +445,13 @@ contains
          call param_read('Surface tension coefficient',fs%sigma)
 
          ! Configure pressure solver
-         ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg2,nst=7)!AS solver update 3-4-2025
+         ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg2,nst=7)
          ps%maxlevel=10
          call param_read('Pressure iteration',ps%maxit)
          call param_read('Pressure tolerance',ps%rcvg)
 
-         ! Configure implicit velocity solver !AS we use Diagonal Dominant Alternating Direction Implicit solver here
-         vs=ddadi(cfg=cfg,name='Velocity',nst=7) !AS solver update 3-4-2025
+         ! Configure implicit velocity solver
+         vs=ddadi(cfg=cfg,name='Velocity',nst=7) 
 
          ! Setup the solver
          call fs%setup(pressure_solver=ps,implicit_solver=vs)
@@ -494,7 +498,7 @@ contains
             ! Zero face velocities as well for the sake of dirichlet boundaries
             fs%V = 0.0_WP; fs%W = 0.0_WP
             
-            ! Initialize gas phase quantities
+            ! Numerical shock profile extraction
             if (extract_flag.eqv.(.true.))then
                !singlephase sim for numerical initialization
                call param_read('Single phase shock location',start_xshock) !singlephase shock starting location
@@ -515,7 +519,7 @@ contains
                end do
                
             else
-               !multiphase sim with numerical initialization
+               !numerically initialized shock
                call param_read('Shock location',xshock)
                call param_read('Droplet diameter',ddrop)
                
@@ -542,6 +546,7 @@ contains
                read(4,*) GP_profile
                close(4)
 
+               ! shock discontinuity initialization
                do i=fs%cfg%imino_,fs%cfg%imaxo_
                   if (cfg%xm(i).le.xshock) then
                      fs%Grho(i,:,:) = Grho1
@@ -563,13 +568,13 @@ contains
                      shock_loc = cfg%xm(shock_index) ! store location of shock corresponding to index
                      if(amRoot)then
                         print*, "The shock has been found at index: ", i
-                        print*, "stored shock index", shock_index
                         print*, "The found shock location (cell center) is: ", shock_loc
                      end if
                   end if
                end do
-               
-               do i=cfg%imino_,cfg%imaxo_ ! read in shock profile
+
+               ! read in numerical shock profile 
+               do i=cfg%imino_,cfg%imaxo_ 
                   if ((cfg%xm(i).le.cfg%xm(shock_index+n_shock)).and.(cfg%xm(i).ge.cfg%xm(shock_index-n_shock)))then
                      fs%Grho(i,:,:) = Grho_profile(i+n_shock-shock_index+1)
                      fs%GP(i,:,:) = GP_profile(i+n_shock-shock_index+1)
@@ -578,11 +583,12 @@ contains
                   end if
                end do
 
-               ! deallocate profile arrays
+               ! deallocate shock profile arrays
                deallocate(Grho_profile);deallocate(GrhoE_profile);deallocate(Ui_profile);deallocate(GP_profile)
             end if
 
             if (extract_flag.eqv.(.false.))then
+               ! if we are running multiphase
                ! Calculate liquid pressure
                if (fs%cfg%nz.eq.1) then
                   ! Cylinder configuration, curv = 1/r
@@ -596,6 +602,7 @@ contains
                fs%Lrho = Lrho0
                fs%LP = LP0
             else
+               ! if we are extracting the numerical shock profile (singlephase)
                fs%Lrho = 1.0_WP
                fs%LP = 1.0_WP
             end if
@@ -640,11 +647,11 @@ contains
             ! Set initial pressure to harmonized field based on internal energy
             fs%P = fs%PA            
             
-         else !AS restart
+         else ! restart
 
             ! Read data
             ! when df%pull is called, it syncs the overlapping cells that are in the physical domain
-            ! the overlapping ghost cells on the edges of the boundaries are not saved with the restart files and must be set 
+            ! the overlapping ghost cells on the boundaries are not saved with the restart files and must be set 
             call df%pull(name='Grho'   ,var=fs%Grho   );
             call df%pull(name='Lrho'   ,var=fs%Lrho   ); 
             call df%pull(name='RHO'    ,var=fs%RHO    ); 
@@ -670,9 +677,6 @@ contains
             call df%pull(name='SL_x'   ,var=fs%sl_x   ); ! AS pull sensor data
             call df%pull(name='SL_y'   ,var=fs%sl_y   );
             call df%pull(name='SL_z'   ,var=fs%sl_z   );
-            
-            ! If we assign periodic in geometry.f90 do we need to add boundary conditions in top and bottom?
-            ! We should implement outflow conditions in y and z directions 
             
             ! define boundary conditions
             call fs%add_bcond(name= 'inflow',type=dirichlet      ,locator=left_of_domain ,face='x',dir=-1)
@@ -718,7 +722,6 @@ contains
                         fs%Ui(i,j,k) = fs%Ui(cfg%imax_,j,k); fs%Vi(i,j,k) = fs%Vi(cfg%imax_,j,k); fs%Wi(i,j,k) = fs%Wi(cfg%imax_,j,k);
                         fs%rhoUi(i,j,k) = fs%rhoUi(cfg%imax_,j,k); fs%rhoVi(i,j,k) = fs%rhoVi(cfg%imax_,j,k); fs%rhoWi(i,j,k) = fs%rhoWi(cfg%imax_,j,k);
                         fs%Grho(i,j,k) = fs%Grho(cfg%imax_,j,k); fs%GP(i,j,k) = fs%GP(cfg%imax_,j,k)                        
-                        !fs%GrhoE(i,j,k) = fs%GrhoE(cfg%imax_,j,k); ! AS test
                         fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(cfg%imax_,j,k),fs%Grho(cfg%imax_,j,k),fs%U(cfg%imax_,j,k),fs%V(cfg%imax_,j,k),fs%W(cfg%imax_,j,k),'gas')
                         fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
             
@@ -756,9 +759,6 @@ contains
                end do
             end if
 
-            !!! issue
-            ! boundary reflections at the top and bottom
-            
             ! outlet at top of domain
             if (cfg%jproc.eq.cfg%npy) then ! apply (neumann) outlet condition
                do k=cfg%kmino_,cfg%kmaxo_
@@ -885,15 +885,12 @@ contains
          call ens_out%add_scalar('LP',fs%LP) 
          call ens_out%add_scalar('GP',fs%GP) 
          call ens_out%add_scalar('LrhoE',fs%LrhoE) 
-         call ens_out%add_scalar('GrhoE',fs%GrhoE)
-         call ens_out%add_vector('face_vel',fs%U,fs%V,fs%W) !AS DEBUG
-         call ens_out%add_scalar('VF_flux',fs%F_VF) !AS DEBUG
-         
+         call ens_out%add_scalar('GrhoE',fs%GrhoE)         
          ! Output to ensight
          if (ens_evt%occurs()) call ens_out%write_data(time%t)
        end block create_ensight
 
-       ! block for writing smesh data more frequently than field variables
+       ! block for writing smesh data
        create_ensight_smesh: block
          real(WP) :: smesh_tper ! declare variable for smesh output frequency
          call param_read('Ensight smesh output period', smesh_tper)
@@ -1146,7 +1143,7 @@ contains
                  call df%push(name='P22'    ,var=P22       )
                  call df%push(name='P23'    ,var=P23       )
                  call df%push(name='P24'    ,var=P24       )
-                 call df%push(name='SL_x'   ,var=fs%sl_x   ) !AS save sensor data
+                 call df%push(name='SL_x'   ,var=fs%sl_x   )
                  call df%push(name='SL_y'   ,var=fs%sl_y   )
                  call df%push(name='SL_z'   ,var=fs%sl_z   )
                  call df%write(fdata='restart/data_'//trim(adjustl(timestamp)))

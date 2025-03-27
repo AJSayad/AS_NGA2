@@ -23,7 +23,7 @@ module simulation
    type(matm),        public :: matmod
    type(timetracker), public :: time
    type(hypre_str),   public :: ps
-   type(ddadi),   public :: vs !AS solver update 3-4-2025
+   type(ddadi),       public :: vs 
 
    !> Ensight postprocessing
    type(surfmesh) :: smesh
@@ -47,7 +47,6 @@ module simulation
    integer  :: n_shock
    real(WP) :: tshock,final_xshock,delta,start_xshock
 
-   !AS restart
    !>Provide a pardata and an event tracker for saving restarts
    type(event)   :: save_evt
    type(pardata) :: df
@@ -77,6 +76,50 @@ contains
      if (i.eq.pg%imax+1) isIn=.true.
    end function right_of_domain
 
+   !> Function that localizes the bottom (y-) of the domain
+   function bot_of_domain(pg,i,j,k) result(isIn)
+     use pgrid_class, only: pgrid
+     implicit none
+     class(pgrid), intent(in) :: pg
+     integer, intent(in) :: i,j,k
+     logical :: isIn
+     isIn=.false.
+     if (j.eq.pg%jmin) isIn=.true.
+   end function bot_of_domain
+
+   !> Function that localizes the top (y+) of the domain
+   function top_of_domain(pg,i,j,k) result(isIn)
+     use pgrid_class, only: pgrid
+     implicit none
+     class(pgrid), intent(in) :: pg
+     integer, intent(in) :: i,j,k
+     logical :: isIn
+     isIn=.false.
+     if (j.eq.pg%jmax+1) isIn=.true.
+   end function top_of_domain
+
+   !> Function that localizes the back (z-) of the domain
+   function bck_of_domain(pg,i,j,k) result(isIn)
+     use pgrid_class, only: pgrid
+     implicit none
+     class(pgrid), intent(in) :: pg
+     integer, intent(in) :: i,j,k
+     logical :: isIn
+     isIn=.false.
+     if (k.eq.pg%kmin) isIn=.true.
+   end function bck_of_domain
+
+   !> Function that localizes the front (z+) of the domain
+   function fnt_of_domain(pg,i,j,k) result(isIn)
+     use pgrid_class, only: pgrid
+     implicit none
+     class(pgrid), intent(in) :: pg
+     integer, intent(in) :: i,j,k
+     logical :: isIn
+     isIn=.false.
+     if (k.eq.pg%kmax+1) isIn=.true.
+   end function fnt_of_domain
+   
    !> Function that defines a level set function for a cylindrical droplet (2D)
    function levelset_cyl(xyz,t) result(G)
      implicit none
@@ -109,7 +152,8 @@ contains
          call param_read('Max timestep size',time%dtmax)
          call param_read('Max cfl number',time%cflmax)
 
-         if (extract_flag.eqv.(.true.)) then ! singlephase simulation
+         ! Numerical shock profile extraction
+         if (extract_flag.eqv.(.true.)) then 
             call param_read('Single phase shock location',start_xshock)
             call param_read('Gas gamma',gamm_g)
             call param_read('Final shock location',final_xshock) !final singlephase shock location
@@ -124,12 +168,14 @@ contains
             vshock = -Ma1 * sqrt(gamm_g*GP1/Grho1) + Ma*sqrt(gamm_g*GP0/Grho0)
             relshockvel = -Grho1*vshock/(Grho0-Grho1)
 
-            time%tmax = (final_xshock - start_xshock) / relshockvel ! calculate final singlephase time based on final shock position
+            ! calculate final shock time based on final shock position
+            time%tmax = (final_xshock - start_xshock) / relshockvel 
             if (cfg%amRoot)then
-               print*, "Singlephase ending time: ", time%tmax
+               print*, "Shock initialization ending time: ", time%tmax
             end if
 
-         else if (extract_flag.eqv.(.false.)) then ! multiphase simulation with extracted shock profile
+         else if (extract_flag.eqv.(.false.)) then
+            ! numerically initialized shock profile
             call param_read('Max time',time%tmax)
             call param_read('Multiphase max timestep size',time%dtmax)
             if (cfg%amRoot)then
@@ -142,7 +188,6 @@ contains
          time%itmax=2
       end block initialize_timetracker
 
-      !AS restart
       ! Handle restart and saves here
       restart_and_save: block
         use string,  only: str_medium
@@ -168,9 +213,8 @@ contains
               ! we are restarting, read file
               call df%initialize(pg=cfg,iopartition=iopartition,fdata='restart/data_'//trim(adjustl(timestamp)))
            else
-              !print*, 'Creating directory for restart files, not restarting.' !AS working
               if (cfg%amRoot) then
-                 if(.not.isdir('restart')) call makedir('restart') !AS working
+                 if(.not.isdir('restart')) call makedir('restart') 
               end if
               
               ! prepare pardata object for saving restart files
@@ -182,7 +226,6 @@ contains
         end if
       end block restart_and_save
 
-      !AS restart
       ! revisit timetracker to adjust the time and time step values if restarting
       update_timetracker: block
         if (extract_flag.eqv.(.false.)) then ! only run restart capability for multiphase sims
@@ -197,21 +240,20 @@ contains
       ! Initialize our VOF solver and field
       create_and_initialize_vof: block
          use mms_geom, only: cube_refine_vol
-         use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux
-         use irl_fortran_interface !AS restart
+         use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux,neumann
+         use irl_fortran_interface 
          
          integer :: i,j,k,n,si,sj,sk
          real(WP), dimension(3,8) :: cube_vertex
          real(WP), dimension(3) :: v_cent,a_cent
          real(WP) :: vol,area
          integer, parameter :: amr_ref_lvl=4
-         real(WP), dimension(:,:,:), allocatable :: P11,P12,P13,P14 !AS restart, planes for interface reconstruction
+         real(WP), dimension(:,:,:), allocatable :: P11,P12,P13,P14 
          real(WP), dimension(:,:,:), allocatable :: P21,P22,P23,P24
          
          ! Create a VOF solver with lvira reconstruction
-         call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF') !AS solver update 3-4-2025
+         call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
 
-         !AS restart
          ! initialize the interface including restarts         
          if (restarted)then
             ! Read in the planes directly and set the IRL interface
@@ -237,14 +279,29 @@ contains
                      end if
                   end do
                end do
-            end do
+            end do            
+            
             call vf%sync_interface() ! this syncs the interface across processors
             deallocate(P11,P12,P13,P14,P21,P22,P23,P24)
             ! Reset moments to guarantee compatibility with interface reconstruction
-            call vf%reset_volume_moments()! this resets volumetric moments based on the interface  
+            call vf%reset_volume_moments()! this resets volumetric moments based on the interface
 
-            if (cfg%iproc.eq.1) vf%VF(cfg%imino:cfg%imin-1,:,:)=0.0_WP
-            
+            ! ensure ghost cells are correct
+            if (cfg%iproc.eq.1) vf%VF(cfg%imino:cfg%imin-1,:,:)=0.0_WP 
+            if (cfg%jproc.eq.cfg%npy) vf%VF(:,cfg%jmaxo:cfg%jmax+1,:)=0.0_WP
+            if (cfg%jproc.eq.1) vf%VF(:,cfg%jmino:cfg%jmin-1,:)=0.0_WP
+            if (cfg%kproc.eq.1) vf%VF(:,:,cfg%kmino:cfg%kmin-1)=0.0_WP
+            if (cfg%kproc.eq.cfg%npz) vf%VF(:,:,cfg%kmaxo:cfg%kmax+1)=0.0_WP
+
+            ! add boundary conditions on VOF
+            call vf%add_bcond(name='xright',type=neumann,locator=right_of_domain,dir='xp')
+            call vf%add_bcond(name='ytop',type=neumann,locator=top_of_domain,dir='yp')
+            call vf%add_bcond(name='ybottom',type=neumann,locator=bot_of_domain,dir='ym')
+            call vf%add_bcond(name='zfront',type=neumann,locator=fnt_of_domain,dir='zp')
+            call vf%add_bcond(name='zback',type=neumann,locator=bck_of_domain,dir='zm')
+            ! apply boundary conditions on VOF
+            call vf%apply_bcond(time%t,time%dt)
+
             ! Update the band
             call vf%update_band() ! searches for a fluid interface and updates the band 
             ! set interface at the boundaries
@@ -263,7 +320,6 @@ contains
             ! Initialize liquid
             if (extract_flag.eqv.(.true.)) then ! if singlephase set VOF to 0.0
                vf%VF = 0.0_WP
-
             else if (extract_flag.eqv.(.false.)) then ! otherwise, initialize droplet based on diameter
                call param_read('Droplet diameter',ddrop)
                call param_read('Droplet location',dctr)
@@ -301,7 +357,6 @@ contains
                
             end if ! extract flag
             
-            ! Boundary conditions on VF are built into the mast solver
             ! Update the band
             call vf%update_band()
             ! Perform interface reconstruction from VOF field
@@ -318,14 +373,23 @@ contains
             call vf%get_curvature()
             ! Reset moments to guarantee compatibility with interface reconstruction
             call vf%reset_volume_moments()
-         end if ! no restart
+
+            ! add boundary conditions on VOF
+            call vf%add_bcond(name='xright',type=neumann,locator=right_of_domain,dir='xp')
+            call vf%add_bcond(name='ytop',type=neumann,locator=top_of_domain,dir='yp')
+            call vf%add_bcond(name='ybottom',type=neumann,locator=bot_of_domain,dir='ym')
+            call vf%add_bcond(name='zfront',type=neumann,locator=fnt_of_domain,dir='zp')
+            call vf%add_bcond(name='zback',type=neumann,locator=bck_of_domain,dir='zm')
+            ! apply boundary conditions on VOF
+            call vf%apply_bcond(time%t,time%dt)
+         end if 
        end block create_and_initialize_vof
 
       ! Create a compressible two-phase flow solver
       create_and_initialize_flow_solver: block
-         use mast_class,      only: clipped_neumann,dirichlet,bc_scope,bcond,mech_egy_mech_hhz
-         use hypre_str_class, only: pcg_pfmg2 !AS solver update 3-4-2025
-         use ddadi_class,     only: ddadi !AS solver update 3-4-2025
+         use mast_class,      only: clipped_neumann,dirichlet,bc_scope,bcond,mech_egy_mech_hhz,neumann
+         use hypre_str_class, only: pcg_pfmg2 ! preconditioned conjugate gradient method for pressure
+         use ddadi_class,     only: ddadi ! diagonal dominant alternating direction implicit method for velocity
          use mathtools,       only: Pi
          use parallel,        only: amRoot
          use messager,        only: die
@@ -364,6 +428,7 @@ contains
          ! Create flow solver
          fs=mast(cfg=cfg,name='Two-phase All-Mach',vf=vf)
 
+         ! get viscosity, thermal conductivity, and specific heat for phases
          call param_read('Liquid dynamic viscosity',visc_l)
          call param_read('Gas dynamic viscosity',visc_g)
          call param_read('Liquid thermal conductivity',kappa_l)
@@ -380,13 +445,13 @@ contains
          call param_read('Surface tension coefficient',fs%sigma)
 
          ! Configure pressure solver
-         ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg2,nst=7)!AS solver update 3-4-2025
+         ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg2,nst=7)
          ps%maxlevel=10
          call param_read('Pressure iteration',ps%maxit)
          call param_read('Pressure tolerance',ps%rcvg)
 
-         ! Configure implicit velocity solver !AS we use Diagonal Dominant Alternating Direction Implicit solver here
-         vs=ddadi(cfg=cfg,name='Velocity',nst=7) !AS solver update 3-4-2025
+         ! Configure implicit velocity solver
+         vs=ddadi(cfg=cfg,name='Velocity',nst=7) 
 
          ! Setup the solver
          call fs%setup(pressure_solver=ps,implicit_solver=vs)
@@ -433,7 +498,7 @@ contains
             ! Zero face velocities as well for the sake of dirichlet boundaries
             fs%V = 0.0_WP; fs%W = 0.0_WP
             
-            ! Initialize gas phase quantities
+            ! Numerical shock profile extraction
             if (extract_flag.eqv.(.true.))then
                !singlephase sim for numerical initialization
                call param_read('Single phase shock location',start_xshock) !singlephase shock starting location
@@ -454,7 +519,7 @@ contains
                end do
                
             else
-               !multiphase sim with numerical initialization
+               !numerically initialized shock
                call param_read('Shock location',xshock)
                call param_read('Droplet diameter',ddrop)
                
@@ -481,6 +546,7 @@ contains
                read(4,*) GP_profile
                close(4)
 
+               ! shock discontinuity initialization
                do i=fs%cfg%imino_,fs%cfg%imaxo_
                   if (cfg%xm(i).le.xshock) then
                      fs%Grho(i,:,:) = Grho1
@@ -502,13 +568,13 @@ contains
                      shock_loc = cfg%xm(shock_index) ! store location of shock corresponding to index
                      if(amRoot)then
                         print*, "The shock has been found at index: ", i
-                        print*, "stored shock index", shock_index
                         print*, "The found shock location (cell center) is: ", shock_loc
                      end if
                   end if
                end do
-               
-               do i=cfg%imino_,cfg%imaxo_ ! read in shock profile
+
+               ! read in numerical shock profile 
+               do i=cfg%imino_,cfg%imaxo_ 
                   if ((cfg%xm(i).le.cfg%xm(shock_index+n_shock)).and.(cfg%xm(i).ge.cfg%xm(shock_index-n_shock)))then
                      fs%Grho(i,:,:) = Grho_profile(i+n_shock-shock_index+1)
                      fs%GP(i,:,:) = GP_profile(i+n_shock-shock_index+1)
@@ -517,11 +583,12 @@ contains
                   end if
                end do
 
-               ! deallocate profile arrays
+               ! deallocate shock profile arrays
                deallocate(Grho_profile);deallocate(GrhoE_profile);deallocate(Ui_profile);deallocate(GP_profile)
             end if
 
             if (extract_flag.eqv.(.false.))then
+               ! if we are running multiphase
                ! Calculate liquid pressure
                if (fs%cfg%nz.eq.1) then
                   ! Cylinder configuration, curv = 1/r
@@ -535,6 +602,7 @@ contains
                fs%Lrho = Lrho0
                fs%LP = LP0
             else
+               ! if we are extracting the numerical shock profile (singlephase)
                fs%Lrho = 1.0_WP
                fs%LP = 1.0_WP
             end if
@@ -545,7 +613,11 @@ contains
             ! Define boundary conditions - initialized values are intended dirichlet values too, for the cell centers
             call fs%add_bcond(name= 'inflow',type=dirichlet      ,locator=left_of_domain ,face='x',dir=-1)
             call fs%add_bcond(name='outflow',type=clipped_neumann,locator=right_of_domain,face='x',dir=+1)
-            
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bot_of_domain,face='y',dir=-1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=top_of_domain,face='y',dir=+1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bck_of_domain,face='z',dir=-1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=fnt_of_domain,face='z',dir=+1)
+
             ! Calculate face velocities
             call fs%interp_vel_basic(vf,fs%Ui,fs%Vi,fs%Wi,fs%U,fs%V,fs%W)
             
@@ -565,7 +637,6 @@ contains
             fs%rhoUi = fs%RHO*fs%Ui; fs%rhoVi = fs%RHO*fs%Vi; fs%rhoWi = fs%RHO*fs%Wi
             
             ! Perform initial pressure relax
-            !relax_model = mech_egy_mech_hhz
             call fs%pressure_relax(vf,matmod,relax_model)
             
             ! Calculate initial phase and bulk moduli
@@ -576,11 +647,11 @@ contains
             ! Set initial pressure to harmonized field based on internal energy
             fs%P = fs%PA            
             
-         else !AS restart
+         else ! restart
 
             ! Read data
             ! when df%pull is called, it syncs the overlapping cells that are in the physical domain
-            ! the overlapping ghost cells on the edges of the boundaries are not saved with the restart files and must be set 
+            ! the overlapping ghost cells on the boundaries are not saved with the restart files and must be set 
             call df%pull(name='Grho'   ,var=fs%Grho   );
             call df%pull(name='Lrho'   ,var=fs%Lrho   ); 
             call df%pull(name='RHO'    ,var=fs%RHO    ); 
@@ -607,14 +678,16 @@ contains
             call df%pull(name='SL_y'   ,var=fs%sl_y   );
             call df%pull(name='SL_z'   ,var=fs%sl_z   );
             
-            ! If we assign periodic in geometry.f90 do we need to add boundary conditions in top and bottom?
-            ! We should implement outflow conditions in y and z directions 
-            
             ! define boundary conditions
             call fs%add_bcond(name= 'inflow',type=dirichlet      ,locator=left_of_domain ,face='x',dir=-1)
             call fs%add_bcond(name='outflow',type=clipped_neumann,locator=right_of_domain,face='x',dir=+1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bot_of_domain,face='y',dir=-1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=top_of_domain,face='y',dir=+1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=bck_of_domain,face='z',dir=-1)
+            call fs%add_bcond(name='outflow',type=clipped_neumann,locator=fnt_of_domain,face='z',dir=+1)
 
             ! Ensure that we are only on the boundaries
+            ! inlet at left of domain
             if (cfg%iproc.eq.1) then ! apply inlet (dirichlet) condition
 
                !try using post shock values for simplicity
@@ -623,7 +696,7 @@ contains
                fs%rhoUi(cfg%imino:cfg%imin-1,:,:) = Grho1*vshock; fs%rhoVi(cfg%imino:cfg%imin-1,:,:) = 0.0_WP; fs%rhoWi(cfg%imino:cfg%imin-1,:,:) = 0.0_WP
                fs%Grho(cfg%imino:cfg%imin-1,:,:) = Grho1; fs%GP(cfg%imino:cfg%imin-1,:,:) = GP1
                fs%GrhoE(cfg%imino:cfg%imin-1,:,:) = matmod%EOS_energy(GP1,Grho1,vshock,0.0_WP,0.0_WP,'gas')
-
+            
                fs%P(cfg%imino:cfg%imin-1,:,:) = GP1
                fs%PA(cfg%imino:cfg%imin-1,:,:) = GP1
                
@@ -631,7 +704,7 @@ contains
                   do j=cfg%jmino_,cfg%jmaxo_
                      do i=cfg%imino,cfg%imin-1
                         fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
-                      end do
+                     end do
                   end do
                end do
                
@@ -640,6 +713,7 @@ contains
                
             end if
 
+            ! outlet at right of domain
             if (cfg%iproc.eq.cfg%npx) then ! apply (neumann) outlet condition
                do k=cfg%kmino_,cfg%kmaxo_
                   do j=cfg%jmino_,cfg%jmaxo_
@@ -650,10 +724,10 @@ contains
                         fs%Grho(i,j,k) = fs%Grho(cfg%imax_,j,k); fs%GP(i,j,k) = fs%GP(cfg%imax_,j,k)                        
                         fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(cfg%imax_,j,k),fs%Grho(cfg%imax_,j,k),fs%U(cfg%imax_,j,k),fs%V(cfg%imax_,j,k),fs%W(cfg%imax_,j,k),'gas')
                         fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
-
+            
                         fs%P(i,j,k) = fs%P(cfg%imax_,j,k)
                         fs%PA(i,j,k) = fs%PA(cfg%imax_,j,k)
-
+            
                         ! set nuemann condition on VOF
                         vf%VF(i,j,k) = vf%VF(cfg%imax_,j,k)
                      end do
@@ -661,6 +735,98 @@ contains
                end do
                
             end if
+
+            ! outlet at bottom of domain
+            if (cfg%jproc.eq.1) then ! apply (neumann) outlet condition
+               do k=cfg%kmino_,cfg%kmaxo_
+                  do j=cfg%jmino,cfg%jmin-1
+                     do i=cfg%imino_,cfg%imaxo_
+                        fs%U(i,j,k) = fs%U(i,cfg%jmin_,k); fs%V(i,j,k) = fs%V(i,cfg%jmin_,k); fs%W(i,j,k) = fs%W(i,cfg%jmin_,k);
+                        fs%Ui(i,j,k) = fs%Ui(i,cfg%jmin_,k); fs%Vi(i,j,k) = fs%Vi(i,cfg%jmin_,k); fs%Wi(i,j,k) = fs%Wi(i,cfg%jmin_,k);
+                        fs%rhoUi(i,j,k) = fs%rhoUi(i,cfg%jmin_,k); fs%rhoVi(i,j,k) = fs%rhoVi(i,cfg%jmin_,k); fs%rhoWi(i,j,k) = fs%rhoWi(i,cfg%jmin_,k);
+                        fs%Grho(i,j,k) = fs%Grho(i,cfg%jmin_,k); fs%GP(i,j,k) = fs%GP(i,cfg%jmin_,k)
+                        fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,cfg%jmin_,k),fs%Grho(i,cfg%jmin_,k),fs%U(i,cfg%jmin_,k),fs%V(i,cfg%jmin_,k),fs%W(i,cfg%jmin_,k),'gas')                        
+                        fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+            
+                        fs%P(i,j,k) = fs%P(i,cfg%jmin_,k)
+                        fs%PA(i,j,k) = fs%PA(i,cfg%jmin_,k)
+
+                        ! set nuemann condition on VOF
+                        vf%VF(i,j,k) = vf%VF(i,cfg%jmin_,k)
+
+                     end do
+                  end do
+               end do
+            end if
+
+            ! outlet at top of domain
+            if (cfg%jproc.eq.cfg%npy) then ! apply (neumann) outlet condition
+               do k=cfg%kmino_,cfg%kmaxo_
+                  do j=cfg%jmax+1,cfg%jmaxo
+                     do i=cfg%imino_,cfg%imaxo_
+                        fs%U(i,j,k) = fs%U(i,cfg%jmax_,k); fs%V(i,j,k) = fs%V(i,cfg%jmax_,k); fs%W(i,j,k) = fs%W(i,cfg%jmax_,k);
+                        fs%Ui(i,j,k) = fs%Ui(i,cfg%jmax_,k); fs%Vi(i,j,k) = fs%Vi(i,cfg%jmax_,k); fs%Wi(i,j,k) = fs%Wi(i,cfg%jmax_,k);
+                        fs%rhoUi(i,j,k) =fs%rhoUi(i,cfg%jmax_,k); fs%rhoVi(i,j,k) = fs%rhoVi(i,cfg%jmax_,k); fs%rhoWi(i,j,k) = fs%rhoWi(i,cfg%jmax_,k);
+                        fs%Grho(i,j,k) = fs%Grho(i,cfg%jmax_,k); fs%GP(i,j,k) = fs%GP(i,cfg%jmax_,k)
+                        fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,cfg%jmax_,k),fs%Grho(i,cfg%jmax_,k),fs%U(i,cfg%jmax_,k),fs%V(i,cfg%jmax_,k),fs%W(i,cfg%jmax_,k),'gas')
+                        fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+            
+                        fs%P(i,j,k) = fs%P(i,cfg%jmax_,k)
+                        fs%PA(i,j,k) = fs%PA(i,cfg%jmax_,k)
+            
+                        ! set nuemann condition on VOF
+                        vf%VF(i,j,k) = vf%VF(i,cfg%jmax_,k)
+            
+                     end do
+                  end do
+               end do
+            end if
+
+            ! outlet at back of domain
+            if (cfg%kproc.eq.1) then ! apply (neumann) outlet condition
+               do k=cfg%kmino,cfg%kmin-1
+                  do j=cfg%jmino_,cfg%jmaxo_
+                     do i=cfg%imino_,cfg%imaxo_
+                        fs%U(i,j,k) = fs%U(i,j,cfg%kmin_); fs%V(i,j,k) = fs%V(i,j,cfg%kmin_); fs%W(i,j,k) = fs%W(i,j,cfg%kmin_);
+                        fs%Ui(i,j,k) = fs%Ui(i,j,cfg%kmin_); fs%Vi(i,j,k) = fs%Vi(i,j,cfg%kmin_); fs%Wi(i,j,k) = fs%Wi(i,j,cfg%kmin_);
+                        fs%rhoUi(i,j,k) = fs%rhoUi(i,j,cfg%kmin_); fs%rhoVi(i,j,k) = fs%rhoVi(i,j,cfg%kmin_); fs%rhoWi(i,j,k) = fs%rhoWi(i,j,cfg%kmin_);
+                        fs%Grho(i,j,k) = fs%Grho(i,j,cfg%kmin_); fs%GP(i,j,k) = fs%GP(i,j,cfg%kmin_)
+                        fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,j,cfg%kmin_),fs%Grho(i,j,cfg%kmin_),fs%U(i,j,cfg%kmin_),fs%V(i,j,cfg%kmin_),fs%W(i,j,cfg%kmin_),'gas')
+                        fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+            
+                        fs%P(i,j,k) = fs%P(i,j,cfg%kmin_)
+                        fs%PA(i,j,k) = fs%PA(i,j,cfg%kmin_)
+            
+                        ! set nuemann condition on VOF
+                        vf%VF(i,j,k) = vf%VF(i,j,cfg%kmin_)
+                     end do
+                  end do
+               end do
+            end if
+
+            ! outlet at front of domain
+            if (cfg%kproc.eq.cfg%npz) then ! apply (neumann) outlet condition
+               do k=cfg%kmax+1,cfg%kmaxo
+                  do j=cfg%jmino_,cfg%jmaxo_
+                     do i=cfg%imino_,cfg%imaxo_
+                        fs%U(i,j,k) = fs%U(i,j,cfg%kmax_); fs%V(i,j,k) = fs%V(i,j,cfg%kmax_); fs%W(i,j,k) = fs%W(i,j,cfg%kmax_);
+                        fs%Ui(i,j,k) = fs%Ui(i,j,cfg%kmax_); fs%Vi(i,j,k) = fs%Vi(i,j,cfg%kmax_); fs%Wi(i,j,k) = fs%Wi(i,j,cfg%kmax_);
+                        fs%rhoUi(i,j,k) = fs%rhoUi(i,j,cfg%kmax_); fs%rhoVi(i,j,k) = fs%rhoVi(i,j,cfg%kmax_); fs%rhoWi(i,j,k) = fs%rhoWi(i,j,cfg%kmax_);
+                        fs%Grho(i,j,k) = fs%Grho(i,j,cfg%kmax_); fs%GP(i,j,k) = fs%GP(i,j,cfg%kmax_)
+                        fs%GrhoE(i,j,k) = matmod%EOS_energy(fs%GP(i,j,cfg%kmax_),fs%Grho(i,j,cfg%kmax_),fs%U(i,j,cfg%kmax_),fs%V(i,j,cfg%kmax_),fs%W(i,j,cfg%kmax_),'gas')
+                        fs%GrhoSS2(i,j,k) = matmod%EOS_gas(i,j,k,'M')
+            
+                        fs%P(i,j,k) = fs%P(i,j,cfg%kmax_)
+                        fs%PA(i,j,k) = fs%PA(i,j,cfg%kmax_)
+            
+                        ! set nuemann condition on VOF
+                        vf%VF(i,j,k) = vf%VF(i,j,cfg%kmax_)
+                     end do
+                  end do
+               end do
+            end if
+
+            call matmod%update_temperature(VF,fs%Tmptr)
             
             ! Apply face BC - outflow
             bc_scope = 'velocity'
@@ -719,13 +885,12 @@ contains
          call ens_out%add_scalar('LP',fs%LP) 
          call ens_out%add_scalar('GP',fs%GP) 
          call ens_out%add_scalar('LrhoE',fs%LrhoE) 
-         call ens_out%add_scalar('GrhoE',fs%GrhoE)
-         
+         call ens_out%add_scalar('GrhoE',fs%GrhoE)         
          ! Output to ensight
          if (ens_evt%occurs()) call ens_out%write_data(time%t)
        end block create_ensight
 
-       ! block for writing smesh data more frequently than field variables
+       ! block for writing smesh data
        create_ensight_smesh: block
          real(WP) :: smesh_tper ! declare variable for smesh output frequency
          call param_read('Ensight smesh output period', smesh_tper)
@@ -838,7 +1003,7 @@ contains
             
             ! Predictor step, involving advection and pressure terms
             call fs%advection_step(time%dt,vf,matmod)
-            
+
             ! Viscous step
             call fs%diffusion_src_explicit_step(time%dt,vf,matmod)
 
@@ -978,7 +1143,7 @@ contains
                  call df%push(name='P22'    ,var=P22       )
                  call df%push(name='P23'    ,var=P23       )
                  call df%push(name='P24'    ,var=P24       )
-                 call df%push(name='SL_x'   ,var=fs%sl_x   ) !AS save sensor data
+                 call df%push(name='SL_x'   ,var=fs%sl_x   )
                  call df%push(name='SL_y'   ,var=fs%sl_y   )
                  call df%push(name='SL_z'   ,var=fs%sl_z   )
                  call df%write(fdata='restart/data_'//trim(adjustl(timestamp)))

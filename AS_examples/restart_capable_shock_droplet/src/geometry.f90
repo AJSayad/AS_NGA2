@@ -203,7 +203,7 @@ contains
             end if
 
             ! General serial grid object
-            grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='ShockDrop')
+            grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.true.,name='ShockDrop')
 
       end block create_grid
 
