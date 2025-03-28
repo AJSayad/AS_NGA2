@@ -1,7 +1,0 @@
-In input file:
-1. Run this part in serial set Profile extraction flag to true, comment out Restart line in input.
-This will run the singlephase sim and write the .dat shock profile profile data that is needed
-
-2. Run in parallel, set Profile extraction flag to false, run like normal.
-
-3. For restart, uncomment restart line in input file, this is the timestamp from the saved data files, then run like normal.

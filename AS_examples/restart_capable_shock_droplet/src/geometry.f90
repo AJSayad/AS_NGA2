@@ -57,8 +57,8 @@ contains
          ! if profile is being extracted, run the simulation in 1D
          if (extract_flag.eqv.(.true.)) then
             call param_read('Ly',Ly);
-            ny = 15 !1 !if singlephase, run in 1D
-            Ly = 15*dx
+            ny = 5 !1 !if singlephase, run in 1D
+            Ly = 5*dx
             nz = 1 
             Lz = dx
             allocate(y(ny+1))
@@ -203,7 +203,7 @@ contains
             end if
 
             ! General serial grid object
-            grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.true.,name='ShockDrop')
+            grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.false.,name='ShockDrop')
 
       end block create_grid
 

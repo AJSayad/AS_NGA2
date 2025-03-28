@@ -1,18 +1,18 @@
 # Parallelization
-Partition : 4 4 1
+Partition : 1 1 1
 I/O partition: 1 1 1
 
 # Mesh definition
-Lx :	0.15   # end of the refined region
+Lx :	0.075  # end of the refined region
 Lx ref: 0.0 # start of the refined uniform region in x direction
-nx :	200 #340 
+nx :	100 
 nx stretch right: 0 #number of points to add at the right of domain for stretching
 nx stretch left:  0 #number of points to add at the left of domain for stretching
-Ly :	0.15
-ny :	200 #340 #******hardcoded in geo.f90 for init sim for right now**** #1      # number of cells in the uniform region
+Ly :	0.075 
+ny :	100 # number of cells in the uniform region
 ny stretch : 0 # number of cells to add for stretching (i.e. ny_total = 2*ny_stretch + ny)
-Lz : 	0.005
-nz:     1
+Lz : 	0.075
+nz:     100 
 nz stretch : 0 # number of cells to add for stretching (i.e. nz_total = 2*nz_stretch + nz) 
 
 # Flow setup
@@ -24,8 +24,8 @@ Pre-shock density :   1.204
 Pre-shock pressure :  1.01e5
 
 # init sim setup
-Profile extraction flag: false
-n_shock : 10   # shock profile points (left and right of center)
+Profile extraction flag: true
+n_shock : 5   # shock profile points (left and right of center)
 Single phase shock location: 0.01     # singlephase simulation starting shock location
 Final shock location :       0.02     # singlephase simulation final shock location
 Max timestep size :          1e-7
@@ -46,7 +46,7 @@ Surface tension coefficient : 0.0
 # Time integration
 Multiphase max timestep size: 1e-7  #@REPLACE@
 Max cfl number :    0.5
-Max time :     	  1e-4 #1e-4
+Max time :     	  1e-4 #5e-5 #1e-4
 Max steps :	  1000000
 
 # Pressure solver
@@ -63,6 +63,6 @@ Ensight smesh output period: 1e-5
 
 # Restart
 Restart output period : 1e-5
-Restart from : 5.00000E-05
+#Restart from : 5.00000E-05
 
 # add post processing into sim?
