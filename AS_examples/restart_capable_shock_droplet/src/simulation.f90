@@ -562,7 +562,7 @@ contains
                end do
 
                ! find shock index
-               do i=cfg%imino_,cfg%imaxo_
+               do i=cfg%imin,cfg%imax
                   if ((cfg%xm(i).lt.(xshock+tol)).and.(cfg%xm(i).gt.(xshock-tol))) then
                      shock_index=i
                      shock_loc = cfg%xm(shock_index) ! store location of shock corresponding to index
