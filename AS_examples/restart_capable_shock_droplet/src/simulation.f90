@@ -1033,6 +1033,11 @@ contains
          
          ! Output to ensight
          if (ens_evt%occurs()) then
+            !AS write data
+            call ens_out%write_data(time%t)            
+         end if
+
+         if (ens_evt_smesh%occurs()) then
 
             !update surfmesh object
             update_smesh: block
@@ -1056,13 +1061,7 @@ contains
                  end do
               end do
             end block update_smesh
-
-            !AS write data
-            call ens_out%write_data(time%t)
             
-         end if
-
-         if (ens_evt_smesh%occurs()) then
             call ens_out_smesh%write_data(time%t)
          end if
 
