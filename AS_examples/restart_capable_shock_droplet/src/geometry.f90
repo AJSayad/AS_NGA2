@@ -82,7 +82,7 @@ contains
          call param_read('Droplet diameter',ddrop)
 
             !uniform mesh x
-            alpha=1.05_WP
+            alpha=1.03_WP
             do i=nx_stretchL+1,nx+nx_stretchL+1
                x(i) = start_ref + real(i-1-nx_stretchL,WP)*dx_ref
             end do
