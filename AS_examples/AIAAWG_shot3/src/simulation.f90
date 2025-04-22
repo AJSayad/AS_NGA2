@@ -408,7 +408,8 @@ contains
 
          ! variables for reading in shock profile
          real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, Ui_profile, GP_profile
-
+         integer :: txtunit, ios, Grho_unit, GrhoE_unit, Ui_unit, GP_unit
+         
          ! set up for shock profile
          call param_read('n_shock',n_shock) ! number of points to the left and right of shock for profile
          call param_read('Lx',Lx); call param_read('nx',nx)
@@ -530,21 +531,36 @@ contains
                allocate(GP_profile(2*n_shock+1))
                
                ! read in singlephase profile data and store in variables
-               open(unit=1, file='Grho_profile.dat')
-               read(1,*) Grho_profile
-               close(1)
+               open(newunit=Grho_unit,file='Grho_profile.dat',form='formatted',status='old',action='read',iostat=ios)
+               read(Grho_unit,*) Grho_profile
+               close(Grho_unit)
+               !open(unit=1, file='Grho_profile.dat')
+               !read(1,*) Grho_profile
+               !close(1)
+
+               open(newunit=GrhoE_unit, file='GrhoE_profile.dat',form='formatted',status='old',action='read',iostat=ios)
+               read(GrhoE_unit,*) GrhoE_profile
+               close(GrhoE_unit)
+
+               !open(unit=2, file='GrhoE_profile.dat')
+               !read(2,*) GrhoE_profile
+               !close(2)
+
+               open(newunit=Ui_unit, file='Ui_profile.dat',form='formatted',status='old',action='read',iostat=ios)
+               read(Ui_unit,*) Ui_profile
+               close(Ui_unit)
                
-               open(unit=2, file='GrhoE_profile.dat')
-               read(2,*) GrhoE_profile
-               close(2)
+               !open(unit=3, file='Ui_profile.dat')
+               !read(3,*) Ui_profile
+               !close(3)
+
+               open(newunit=GP_unit, file='GP_profile.dat',form='formatted',status='old',action='read',iostat=ios)
+               read(GP_unit,*) GP_profile
+               close(GP_unit)
                
-               open(unit=3, file='Ui_profile.dat')
-               read(3,*) Ui_profile
-               close(3)
-               
-               open(unit=4, file='GP_profile.dat')
-               read(4,*) GP_profile
-               close(4)
+               !open(unit=4, file='GP_profile.dat')
+               !read(4,*) GP_profile
+               !close(4)
 
                ! shock discontinuity initialization
                do i=fs%cfg%imino_,fs%cfg%imaxo_
@@ -1179,10 +1195,10 @@ contains
      !!! this still only works in serial, must be updated for parallel
      if (extract_flag.eqv.(.true.)) then
         !set up shock profile data files
-        open(1, file='Grho_profile.dat')
-        open(2, file='GrhoE_profile.dat')
-        open(3, file='Ui_profile.dat')
-        open(4, file='GP_profile.dat')
+        open(1, file='Grho_profile.dat',status='new')
+        open(2, file='GrhoE_profile.dat',status='new')
+        open(3, file='Ui_profile.dat',status='new')
+        open(4, file='GP_profile.dat',status='new')
         
         do i=cfg%imino_,cfg%imaxo_
            if ((cfg%xm(i).lt.(final_xshock+tol)).and.(cfg%xm(i).gt.(final_xshock-tol))) then
@@ -1195,9 +1211,9 @@ contains
         do i=shock_index-n_shock,shock_index+n_shock ! this is now writing 2*n_shock points
            write(1,*) fs%Grho(i,1,1)
            write(2,*) fs%GrhoE(i,1,1)
-              write(3,*) fs%Ui(i,1,1)
-              write(4,*) fs%GP(i,1,1)
-           end do
+           write(3,*) fs%Ui(i,1,1)
+           write(4,*) fs%GP(i,1,1)
+        end do
            
            close(1)
            close(2)
