@@ -240,7 +240,7 @@ contains
       ! Initialize our VOF solver and field
       create_and_initialize_vof: block
          use mms_geom, only: cube_refine_vol
-         use vfs_class, only: r2p,lvira,elvira,VFhi,VFlo,plicnet,flux,neumann
+         use vfs_class, only: lvira,VFhi,VFlo,plicnet,flux,neumann
          use irl_fortran_interface 
          
          integer :: i,j,k,n,si,sj,sk
@@ -250,9 +250,13 @@ contains
          integer, parameter :: amr_ref_lvl=4
          real(WP), dimension(:,:,:), allocatable :: P11,P12,P13,P14 
          real(WP), dimension(:,:,:), allocatable :: P21,P22,P23,P24
-         
-         ! Create a VOF solver with lvira reconstruction
-         call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
+
+         ! Create a VOF solver with lvira(2D) or PLICnet(3D) reconstruction
+         if (cfg%nz.eq.1) then
+            call vf%initialize(cfg=cfg,reconstruction_method=lvira,transport_method=flux,name='VOF')
+         else
+            call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
+         end if
 
          ! initialize the interface including restarts         
          if (restarted)then
