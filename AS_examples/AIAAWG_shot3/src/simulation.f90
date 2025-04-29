@@ -253,7 +253,7 @@ contains
 
          ! Create a VOF solver with lvira(2D) or PLICnet(3D) reconstruction
          if (cfg%nz.eq.1) then
-            call vf%initialize(cfg=cfg,reconstruction_method=lvira,name='VOF')
+            call vf%initialize(cfg=cfg,reconstruction_method=lvira,transport_method=flux,name='VOF')
          else
             call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
          end if
