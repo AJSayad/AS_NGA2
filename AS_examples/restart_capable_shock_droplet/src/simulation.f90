@@ -251,12 +251,8 @@ contains
          real(WP), dimension(:,:,:), allocatable :: P11,P12,P13,P14 
          real(WP), dimension(:,:,:), allocatable :: P21,P22,P23,P24
 
-         ! Create a VOF solver with lvira(2D) or PLICnet(3D) reconstruction
-         if (cfg%nz.eq.1) then
-            call vf%initialize(cfg=cfg,reconstruction_method=lvira,transport_method=flux,name='VOF')
-         else
-            call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
-         end if
+         ! Create a VOF solver with PLICnet reconstruction
+         call vf%initialize(cfg=cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
          
          ! initialize the interface including restarts         
          if (restarted)then
