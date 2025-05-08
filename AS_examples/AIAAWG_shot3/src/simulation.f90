@@ -23,7 +23,8 @@ module simulation
    type(matm),        public :: matmod
    type(timetracker), public :: time
    type(hypre_str),   public :: ps
-   type(ddadi),       public :: vs 
+   type(hypre_str),   public :: vs
+   !type(ddadi),       public :: vs 
 
    !> Ensight postprocessing
    type(surfmesh) :: smesh
@@ -456,8 +457,11 @@ contains
          call param_read('Pressure tolerance',ps%rcvg)
 
          ! Configure implicit velocity solver
-         vs=ddadi(cfg=cfg,name='Velocity',nst=7) 
-
+         !vs=ddadi(cfg=cfg,name='Velocity',nst=7) 
+         vs=hypre_str(cfg=cfg,name='Velocity',method=pcg_pfmg2,nst=7)
+         call param_read('Implicit iteration',vs%maxit)
+         call param_read('Implicit tolerance',vs%rcvg)
+         
          ! Setup the solver
          call fs%setup(pressure_solver=ps,implicit_solver=vs)
 
