@@ -393,8 +393,8 @@ contains
       ! Create a compressible two-phase flow solver
       create_and_initialize_flow_solver: block
          use mast_class,      only: clipped_neumann,dirichlet,bc_scope,bcond,mech_egy_mech_hhz,neumann
-         use hypre_str_class, only: pcg_pfmg2 ! preconditioned conjugate gradient method for pressure
-         use ddadi_class,     only: ddadi ! diagonal dominant alternating direction implicit method for velocity
+         use hypre_str_class, only: pcg_pfmg,pcg_pfmg2 ! preconditioned conjugate gradient method for pressure
+         !use ddadi_class,     only: ddadi ! diagonal dominant alternating direction implicit method
          use mathtools,       only: Pi
          use parallel,        only: amRoot
          use messager,        only: die
@@ -458,7 +458,7 @@ contains
 
          ! Configure implicit velocity solver
          !vs=ddadi(cfg=cfg,name='Velocity',nst=7) 
-         vs=hypre_str(cfg=cfg,name='Velocity',method=pcg_pfmg2,nst=7)
+         vs=hypre_str(cfg=cfg,name='Velocity',method=pcg_pfmg,nst=7)
          call param_read('Implicit iteration',vs%maxit)
          call param_read('Implicit tolerance',vs%rcvg)
          
