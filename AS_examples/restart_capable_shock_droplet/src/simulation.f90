@@ -11,7 +11,7 @@ module simulation
    use event_class,       only: event
    use monitor_class,     only: monitor
    use hypre_str_class,   only: hypre_str
-   use ddadi_class,       only: ddadi
+   !use ddadi_class,       only: ddadi
    use pardata_class,     only: pardata
    implicit none
    private
@@ -451,7 +451,7 @@ contains
          call param_read('Surface tension coefficient',fs%sigma)
 
          ! Configure pressure solver
-         ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg2,nst=7)
+         ps=hypre_str(cfg=cfg,name='Pressure',method=pcg_pfmg,nst=7)
          ps%maxlevel=10
          call param_read('Pressure iteration',ps%maxit)
          call param_read('Pressure tolerance',ps%rcvg)
