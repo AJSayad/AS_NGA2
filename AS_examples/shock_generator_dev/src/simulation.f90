@@ -44,7 +44,7 @@ contains
        end do
     !end if
 
-       ! add couple block
+       ! add coupling block
        shock_profile: block
          integer :: i
          ! find shock index
@@ -70,6 +70,9 @@ contains
                end if
             end do
          end if
+
+         !update timestep from shockgen to shockdrop
+         shockdrop%time%dtmax = shockgen%time%dtmax
        end block shock_profile
          
      end subroutine simulation_init
