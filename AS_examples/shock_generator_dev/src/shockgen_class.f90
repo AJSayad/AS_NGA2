@@ -62,23 +62,26 @@ contains
       real(WP) :: Lx,dx,Ly,dy,Lz,dz,alpha
       real(WP), dimension(:), allocatable :: x,y,z
 
-      ! variables for stretching in x
-      integer  :: nx_stretchL,nx_stretchR
-      real(WP) :: dx_old,dx_ref,start_ref
+      ! variables for stretching
+      integer  :: nx_stretchL,nx_stretchR,ny_stretch,nz_stretch
+      real(WP) :: dx_old,dx_ref,start_ref,dy_old,dy_stretch,dz_old,dz_stretch
 
       ! stretching ratio
       alpha = 1.03_WP
 
+      alpha=1.03_WP ! mesh stretching ratio
       ! Read in grid definition
       call param_read('Lx',Lx); call param_read('Lx ref', start_ref, default=0.0_WP);
       call param_read('nx',nx); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
-      dx = Lx/nx
-      dx_ref = (Lx - start_ref)/real(nx,WP)
-      
-      ! since only the x-direction matters for the shock generator, we reduce our mesh in the y and z directions
-      ny = 5; Ly = 5*dx; nz = 1; dz = dx
-
-      allocate(x(nx+nx_stretchL+nx_stretchR+1));allocate(y(ny+1));allocate(z(nz+1))
+      dx = Lx/nx; dx_ref = (Lx - start_ref)/real(nx,WP)
+      call param_read('Ly',Ly); call param_read('ny',ny); call param_read('ny stretch',ny_stretch);
+      call param_read('nz',nz,default=1); call param_read('nz stretch',nz_stretch)
+      if (nz.eq.1) then
+         Lz = dx
+      else
+         call param_read('Lz',Lz)
+      end if      
+      allocate(x(nx+nx_stretchL+nx_stretchR+1));allocate(y(ny+2*ny_stretch+1));allocate(z(nz+2*nz_stretch+1));
 
       !uniform mesh x
       do i=nx_stretchL+1,nx+nx_stretchL+1
@@ -95,25 +98,63 @@ contains
       do i=nx+nx_stretchL+2,nx+nx_stretchL+nx_stretchR+1
          dx_old = x(i-1)-x(i-2)
          x(i) = x(i-1)+dx_old*alpha
-      end do
+      end do      
 
-      !uniform y and z (we're only going to be uniform in y and z for shock generator)
-      do j=1,ny+1
-         dy = Ly/ny
-         y(j) = real(j-1,WP)/real(ny,WP)*Ly-0.5_WP*Ly
+      ! y mesh
+      do j = 1,ny+2*ny_stretch+1 !initialize y mesh array
+         y(j) = 0.0_WP
       end do
       
-      do k=1,nz+1
-         dz = Lz/nz
-         z(k) = real(k-1,WP)/real(nz,WP)*Lz-0.5_WP*Lz
+      dy = Ly/ny ! define uniform grid spacing
+      y(ny/2+ny_stretch+1) = 0.0_WP !define the centerline of the domain
+      
+      !y array uniform region
+      do j = ny/2+ny_stretch+2,ny+ny_stretch+1
+         y(j) = y(j-1) + dy
       end do
-
+      
+      !stretching in y
+      do j = ny+ny_stretch+2,ny+(2*ny_stretch)+1
+         dy_old = y(j-2) - y(j-3)
+         dy_stretch = alpha*dy_old
+         y(j) = y(j-1) + dy_stretch
+      end do
+      
+      ! mirror y across y=0 line
+      do j = 1,ny/2+ny_stretch
+         y(j) = -y(ny-j+(2*ny_stretch)+2)
+      end do
+      
+      ! z mesh
+      dz = Lz/nz ! define uniform grid spacing
+      z(nz/2+nz_stretch+1) = 0.0_WP !define centerline
+      
+      do k = nz/2+nz_stretch+2,nz+nz_stretch+1
+         z(k) = z(k-1) + dz
+      end do
+      
+      !stretching in z
+      do k = nz+nz_stretch+2,nz+(2*nz_stretch)+1
+         dz_old = z(k-2) - z(k-3)
+         dz_stretch = alpha*dz_old
+         z(k) = z(k-1) + dz_stretch
+      end do
+      
+      ! mirror z across centerline
+      do k = 1,nz/2+nz_stretch
+         z(k) = -z(nz-k+(2*nz_stretch)+2)
+      end do
+            
       ! General serial grid object
-      ! periodic in y and z boundaries for shock generator 
-      grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='sgen')
+      if (nz.gt.1)then
+         grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.false.,name='ShockDrop')
+      else
+         grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.true.,name='ShockDrop')
+      end if
 
       ! Read in partition
       call param_read('Partition',partition,short='p')
+      
       ! Create partitioned grid
       this%cfg=config(grp=group,decomp=partition,grid=grid)
 
