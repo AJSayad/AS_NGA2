@@ -69,7 +69,6 @@ contains
       ! stretching ratio
       alpha = 1.03_WP
 
-      alpha=1.03_WP ! mesh stretching ratio
       ! Read in grid definition
       call param_read('Lx',Lx); call param_read('Lx ref', start_ref, default=0.0_WP);
       call param_read('nx',nx); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
