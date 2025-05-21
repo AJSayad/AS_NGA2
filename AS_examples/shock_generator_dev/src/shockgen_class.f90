@@ -66,6 +66,8 @@ contains
       integer  :: nx_stretchL,nx_stretchR,ny_stretch,nz_stretch
       real(WP) :: dx_old,dx_ref,start_ref,dy_old,dy_stretch,dz_old,dz_stretch
 
+      print*, "AS shockgen class: starting mesh generation."
+
       ! stretching ratio
       alpha = 1.03_WP
 
@@ -146,9 +148,9 @@ contains
             
       ! General serial grid object
       if (nz.gt.1)then
-         grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.false.,name='ShockDrop')
+         grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.false.,name='ShockGen')
       else
-         grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.true.,name='ShockDrop')
+         grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.true.,name='ShockGen')
       end if
 
       ! Read in partition
@@ -156,6 +158,8 @@ contains
       
       ! Create partitioned grid
       this%cfg=config(grp=group,decomp=partition,grid=grid)
+
+      print*, "AS shockgen class: Finished mesh generation."
 
     end block create_config
     
@@ -204,10 +208,15 @@ contains
       real(WP), dimension(3) :: v_cent,a_cent
       real(WP) :: vol,area
       integer, parameter :: amr_ref_lvl=4
+
+      print*, "AS shockgen class: VOF solver setup."
+
+      ! Create a VOF solver with PLICnet reconstruction
+      call this%vf%initialize(cfg=this%cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
   
       ! set VOF to zero everywhere
       this%vf%VF = 0.0_WP
-      
+
       ! Update the band
       call this%vf%update_band()
       ! Perform interface reconstruction from VOF field
@@ -237,12 +246,14 @@ contains
       
       ! apply boundary conditions on VOF
       call this%vf%apply_bcond(this%time%t,this%time%dt)
+      print*, "AS shockgen class: VOF solver setup finished."
     end block create_VOF_solver
     
     !> create two-phase compressible flow solver
     create_flow_solver: block
       use hypre_str_class, only: pcg_pfmg ! preconditioned conjugate gradient method for pressure and velocity
       use param,           only: param_read
+      print*, "AS shockgen class: Flow solver setup."
       ! Create flow solver
       this%fs=mast(cfg=this%cfg,name='Two-phase All-Mach',vf=this%vf)
       ! Configure pressure solver
@@ -256,6 +267,7 @@ contains
       call param_read('Implicit tolerance',this%vs%rcvg)
       ! Setup the solver
       call this%fs%setup(pressure_solver=this%ps,implicit_solver=this%vs)
+      print*, "AS shockgen class: Flow solver setup finshed."
     end block create_flow_solver
       
     !> set initial and boundary  conditions
@@ -276,6 +288,8 @@ contains
       ! variables for shock generation
       integer  :: n_shock,shock_index
       real(WP) :: final_xshock,delta,dx,tol,shock_loc
+
+      print*, "AS shockgen class: Starting initial condition setup."
       
       ! set up for shock profile
       call param_read('n_shock',n_shock) ! number of points to capture shock profile
@@ -405,6 +419,8 @@ contains
       
       ! Set initial pressure to harmonized field based on internal energy
       this%fs%P = this%fs%PA
+
+      print*, "AS shockgen class: Finished initial condition setup."
       
     end block set_IC_BC
       
@@ -412,6 +428,7 @@ contains
     !> create ensight output
     create_ensight: block
       use param,           only: param_read
+      print*, "AS shockgen class: setting up ensight output."
       ! Create Ensight output from cfg
       this%ens_out=ensight(cfg=this%cfg,name='Shockgen')
       ! Create event for Ensight output
@@ -439,10 +456,12 @@ contains
       call this%ens_out%add_scalar('GrhoE',this%fs%GrhoE)         
       ! Output to ensight
       if (this%ens_evt%occurs()) call this%ens_out%write_data(this%time%t)
+      print*, "AS shockgen class: finished setting up ensight output."
     end block create_ensight
 
     !> Create a monitor file
     create_monitor: block
+      print*, "AS shockgen class: monitor setup."
       ! Prepare some info about fields
       call this%fs%get_cfl(this%time%dt,this%time%cfl)
       call this%fs%get_max()
@@ -489,67 +508,87 @@ contains
       call this%cvgfile%add_column(this%fs%implicit%rerr,'Impl_z error')
       call this%cvgfile%add_column(this%fs%psolv%it,'Pressure iteration')
       call this%cvgfile%add_column(this%fs%psolv%rerr,'Pressure error')
+      print*, "AS shockgen class: monitor setup finished."
+      print*, "AS time check: time = ", this%time%t
+      print*, "AS time check: nt = ", this%time%n
     end block create_monitor
   end subroutine init
 
   !> Take one time step with specified dt
   subroutine step(this)
-    use messager, only: die
     implicit none
     class(sgen), intent(inout) :: this
+
+    print*, "AS shockgen class: Stepping the simulation one timestep."
 
     ! Perform time integration in simulation.f90 file 
     ! Increment time
     call this%fs%get_cfl(this%time%dt,this%time%cfl)
     call this%time%adjust_dt()
     call this%time%increment()
+
+    print*, "AS shockgen class: line 530."
     
     ! Reinitialize phase pressure by syncing it with conserved phase energy
     call this%fs%reinit_phase_pressure(this%vf,this%matmod)
     ! remember old velocity and density
     this%fs%Uiold=this%fs%Ui; this%fs%Viold=this%fs%Vi; this%fs%Wiold=this%fs%Wi;this%fs%RHOold = this%fs%RHO
+
+    print*, "AS shockgen class: line 537."
     
     ! AS do we need these steps for singlephase?
     ! Remember old interface, including VF and barycenters
-    call this%vf%copy_interface_to_old()
+    call this%vf%copy_interface_to_old() 
+
+    print*, "AS shockgen class: line 543."
     
     ! Create in-cell reconstruction
-    call this%fs%flow_reconstruct(this%vf)
+    call this%fs%flow_reconstruct(this%vf) ! AS *** we're getting hung up here ***
+
+    print*, "AS shockgen class: line 548."
     
     ! Zero variables that will change during subiterations
     this%fs%P = 0.0_WP;this%fs%Pjx = 0.0_WP;this%fs%Pjy = 0.0_WP;this%fs%Pjz = 0.0_WP;this%fs%Hpjump = 0.0_WP
+
+    print*, "AS shockgen class: line 553."
     
     ! Determine semi-Lagrangian advection flag
     call this%fs%flag_sl(this%time%dt,this%vf)
+
+    print*, "AS shockgen class: line 558."
     
     ! Perform sub-iterations
     do while (this%time%it.le.this%time%itmax)
-       
+       print*, "AS shockgen class: DO WHILE line 562."
+       print*, "shockgen class: this%time%dt = ", this%time%dt
        ! Predictor step, involving advection and pressure terms
        call this%fs%advection_step(this%time%dt,this%vf,this%matmod)
-       
+       print*, "AS shockgen class:  line 565."
        ! Viscous step
        call this%fs%diffusion_src_explicit_step(this%time%dt,this%vf,this%matmod)
-       
+       print*, "AS shockgen class:  line 568."
        ! Prepare pressure projection
        call this%fs%pressureproj_prepare(this%time%dt,this%vf,this%matmod)
-       
+       print*, "AS shockgen class:  line 571."
        ! Initialize and solve Helmholtz equation
        call this%fs%psolv%setup()
        this%fs%psolv%sol=this%fs%PA-this%fs%P
+       print*, "AS shockgen class:  line 575."
        call this%fs%psolv%solve()
+       print*, "AS shockgen class:  line 577."
        call this%fs%cfg%sync(this%fs%psolv%sol)
-       
+       print*, "AS shockgen class:  line 579."
        ! Perform corrector step using solution
        this%fs%P=this%fs%P+this%fs%psolv%sol
-       
+       print*, "AS shockgen class:  line 582."
        call this%fs%pressureproj_correct(this%time%dt,this%vf,this%fs%psolv%sol)
-       
+       print*, "AS shockgen class:  line 584."
        ! Record convergence monitor
        call this%cvgfile%write()
+       print*, "AS shockgen class:  line 587."
        ! Increment sub-iteration counter
        this%time%it=this%time%it+1
-       
+       print*, "AS shockgen class:  line 590."
     end do
     
     ! Pressure relaxation

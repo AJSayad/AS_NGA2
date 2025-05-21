@@ -29,7 +29,8 @@ contains
 
     ! initialize the shock generator sim
     !if (.not.shockdrop%restarted)then
-       call shockgen%init()
+    print*, "simulation.f90: calling shockgen init."
+    call shockgen%init()
     !end if
 
     ! initialize shock droplet sim
@@ -38,10 +39,12 @@ contains
     ! initialize coupler
 
     !if (.not.shockdrop%restarted)then
-       do while (.not.shockgen%time%done())
-          ! advance shock generator sim by one step
-          call shockgen%step()
-       end do
+    do while (.not.shockgen%time%done())
+       ! advance shock generator sim by one step
+       print*, "simulation.f90: calling shockgen step."
+       print*, "simulation.f90 shockgen%time%done(): ", shockgen%time%done()
+       call shockgen%step()
+    end do
     !end if
 
        ! add coupling block
