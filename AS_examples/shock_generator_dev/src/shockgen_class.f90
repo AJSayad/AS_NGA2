@@ -509,8 +509,6 @@ contains
       call this%cvgfile%add_column(this%fs%psolv%it,'Pressure iteration')
       call this%cvgfile%add_column(this%fs%psolv%rerr,'Pressure error')
       print*, "AS shockgen class: monitor setup finished."
-      print*, "AS time check: time = ", this%time%t
-      print*, "AS time check: nt = ", this%time%n
     end block create_monitor
   end subroutine init
 
@@ -527,68 +525,57 @@ contains
     call this%time%adjust_dt()
     call this%time%increment()
 
-    print*, "AS shockgen class: line 530."
-    
     ! Reinitialize phase pressure by syncing it with conserved phase energy
     call this%fs%reinit_phase_pressure(this%vf,this%matmod)
     ! remember old velocity and density
     this%fs%Uiold=this%fs%Ui; this%fs%Viold=this%fs%Vi; this%fs%Wiold=this%fs%Wi;this%fs%RHOold = this%fs%RHO
 
-    print*, "AS shockgen class: line 537."
-    
+    ! Remember old flow variables (phase)
+    this%fs%Grhoold = this%fs%Grho; this%fs%Lrhoold = this%fs%Lrho
+    this%fs%GrhoEold=this%fs%GrhoE; this%fs%LrhoEold=this%fs%LrhoE
+    this%fs%GPold   =   this%fs%GP; this%fs%LPold   =   this%fs%LP
+
     ! AS do we need these steps for singlephase?
     ! Remember old interface, including VF and barycenters
     call this%vf%copy_interface_to_old() 
 
-    print*, "AS shockgen class: line 543."
-    
     ! Create in-cell reconstruction
-    call this%fs%flow_reconstruct(this%vf) ! AS *** we're getting hung up here ***
+    call this%fs%flow_reconstruct(this%vf) ! AS *** we're getting hung up here *** --> in-cell flow reconstruction from fluxes
 
-    print*, "AS shockgen class: line 548."
-    
     ! Zero variables that will change during subiterations
     this%fs%P = 0.0_WP;this%fs%Pjx = 0.0_WP;this%fs%Pjy = 0.0_WP;this%fs%Pjz = 0.0_WP;this%fs%Hpjump = 0.0_WP
 
-    print*, "AS shockgen class: line 553."
-    
     ! Determine semi-Lagrangian advection flag
     call this%fs%flag_sl(this%time%dt,this%vf)
 
-    print*, "AS shockgen class: line 558."
-    
     ! Perform sub-iterations
     do while (this%time%it.le.this%time%itmax)
-       print*, "AS shockgen class: DO WHILE line 562."
-       print*, "shockgen class: this%time%dt = ", this%time%dt
        ! Predictor step, involving advection and pressure terms
        call this%fs%advection_step(this%time%dt,this%vf,this%matmod)
-       print*, "AS shockgen class:  line 565."
+
        ! Viscous step
        call this%fs%diffusion_src_explicit_step(this%time%dt,this%vf,this%matmod)
-       print*, "AS shockgen class:  line 568."
+
        ! Prepare pressure projection
        call this%fs%pressureproj_prepare(this%time%dt,this%vf,this%matmod)
-       print*, "AS shockgen class:  line 571."
+
        ! Initialize and solve Helmholtz equation
        call this%fs%psolv%setup()
        this%fs%psolv%sol=this%fs%PA-this%fs%P
-       print*, "AS shockgen class:  line 575."
+
        call this%fs%psolv%solve()
-       print*, "AS shockgen class:  line 577."
+
        call this%fs%cfg%sync(this%fs%psolv%sol)
-       print*, "AS shockgen class:  line 579."
+
        ! Perform corrector step using solution
        this%fs%P=this%fs%P+this%fs%psolv%sol
-       print*, "AS shockgen class:  line 582."
        call this%fs%pressureproj_correct(this%time%dt,this%vf,this%fs%psolv%sol)
-       print*, "AS shockgen class:  line 584."
+
        ! Record convergence monitor
        call this%cvgfile%write()
-       print*, "AS shockgen class:  line 587."
+
        ! Increment sub-iteration counter
        this%time%it=this%time%it+1
-       print*, "AS shockgen class:  line 590."
     end do
     
     ! Pressure relaxation

@@ -955,6 +955,11 @@ contains
        call this%fs%reinit_phase_pressure(this%vf,this%matmod)
        ! remember old velocity and density
        this%fs%Uiold=this%fs%Ui; this%fs%Viold=this%fs%Vi; this%fs%Wiold=this%fs%Wi;this%fs%RHOold = this%fs%RHO
+
+       ! Remember old flow variables (phase)
+       this%fs%Grhoold = this%fs%Grho; this%fs%Lrhoold = this%fs%Lrho
+       this%fs%GrhoEold=this%fs%GrhoE; this%fs%LrhoEold=this%fs%LrhoE
+       this%fs%GPold   =   this%fs%GP; this%fs%LPold   =   this%fs%LP
        
        ! Remember old interface, including VF and barycenters
        call this%vf%copy_interface_to_old()
