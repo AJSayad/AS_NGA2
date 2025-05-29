@@ -43,9 +43,9 @@ contains
     end if
 
     ! initialize shock droplet sim
-    !if (.not.shockdrop%restarted)then
+    if (.not.shockdrop%restarted)then
        call shockdrop%init(shockgen%time%dt,shockgen%time%dtmax)
-    !end if
+    end if
 
     ! add coupling block if needed
     shock_profile: block

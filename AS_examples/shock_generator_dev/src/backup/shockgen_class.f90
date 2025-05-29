@@ -66,6 +66,8 @@ contains
       integer  :: nx_stretchL,nx_stretchR,ny_stretch,nz_stretch
       real(WP) :: dx_old,dx_ref,start_ref,dy_old,dy_stretch,dz_old,dz_stretch
 
+      print*, "AS shockgen class: starting mesh generation."
+
       ! stretching ratio
       alpha = 1.03_WP
 
@@ -157,6 +159,8 @@ contains
       ! Create partitioned grid
       this%cfg=config(grp=group,decomp=partition,grid=grid)
 
+      print*, "AS shockgen class: Finished mesh generation."
+
     end block create_config
     
     initialize_timetracker: block
@@ -166,7 +170,7 @@ contains
       real(WP) :: gamm_g,Ma,Grho0,GP0,Grho1,GP1,Ma1            ! gas properties
       
       this%time=timetracker(amRoot=this%cfg%amRoot)
-      call param_read('Max timestep size',this%time%dtmax)
+      call param_read('Shockgen Max timestep size',this%time%dtmax)
       call param_read('Max cfl number',this%time%cflmax)
 
       ! use shock values to calculate final simulation time
@@ -205,6 +209,8 @@ contains
       real(WP) :: vol,area
       integer, parameter :: amr_ref_lvl=4
 
+      print*, "AS shockgen class: VOF solver setup."
+
       ! Create a VOF solver with PLICnet reconstruction
       call this%vf%initialize(cfg=this%cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
   
@@ -240,12 +246,14 @@ contains
       
       ! apply boundary conditions on VOF
       call this%vf%apply_bcond(this%time%t,this%time%dt)
+      print*, "AS shockgen class: VOF solver setup finished."
     end block create_VOF_solver
     
     !> create two-phase compressible flow solver
     create_flow_solver: block
       use hypre_str_class, only: pcg_pfmg ! preconditioned conjugate gradient method for pressure and velocity
       use param,           only: param_read
+      print*, "AS shockgen class: Flow solver setup."
       ! Create flow solver
       this%fs=mast(cfg=this%cfg,name='Two-phase All-Mach',vf=this%vf)
       ! Configure pressure solver
@@ -259,6 +267,7 @@ contains
       call param_read('Implicit tolerance',this%vs%rcvg)
       ! Setup the solver
       call this%fs%setup(pressure_solver=this%ps,implicit_solver=this%vs)
+      print*, "AS shockgen class: Flow solver setup finshed."
     end block create_flow_solver
       
     !> set initial and boundary  conditions
@@ -280,6 +289,8 @@ contains
       integer  :: n_shock,shock_index
       real(WP) :: final_xshock,delta,dx,tol,shock_loc
 
+      print*, "AS shockgen class: Starting initial condition setup."
+      
       ! set up for shock profile
       call param_read('n_shock',n_shock) ! number of points to capture shock profile
       call param_read('Lx',Lx); call param_read('nx',nx)
@@ -409,12 +420,15 @@ contains
       ! Set initial pressure to harmonized field based on internal energy
       this%fs%P = this%fs%PA
 
+      print*, "AS shockgen class: Finished initial condition setup."
+      
     end block set_IC_BC
       
     !> singlephase, no need for smesh
     !> create ensight output
     create_ensight: block
       use param,           only: param_read
+      print*, "AS shockgen class: setting up ensight output."
       ! Create Ensight output from cfg
       this%ens_out=ensight(cfg=this%cfg,name='Shockgen')
       ! Create event for Ensight output
@@ -442,63 +456,68 @@ contains
       call this%ens_out%add_scalar('GrhoE',this%fs%GrhoE)         
       ! Output to ensight
       if (this%ens_evt%occurs()) call this%ens_out%write_data(this%time%t)
+      print*, "AS shockgen class: finished setting up ensight output."
     end block create_ensight
 
     !> Create a monitor file
-    !create_monitor: block
-    !  ! Prepare some info about fields
-    !  call this%fs%get_cfl(this%time%dt,this%time%cfl)
-    !  call this%fs%get_max()
-    !  call this%vf%get_max()
-    !  ! Create simulation monitor
-    !  this%mfile=monitor(this%fs%cfg%amRoot,'simulation')
-    !  call this%mfile%add_column(this%time%n,'Timestep number')
-    !  call this%mfile%add_column(this%time%t,'Time')
-    !  call this%mfile%add_column(this%time%dt,'Timestep size')
-    !  call this%mfile%add_column(this%time%cfl,'Maximum CFL')
-    !  call this%mfile%add_column(this%fs%RHOmin,'RHOmin')
-    !  call this%mfile%add_column(this%fs%RHOmax,'RHOmax')
-    !  call this%mfile%add_column(this%fs%Umax,'Umax')
-    !  call this%mfile%add_column(this%fs%Vmax,'Vmax')
-    !  call this%mfile%add_column(this%fs%Wmax,'Wmax')
-    !  call this%mfile%add_column(this%fs%Pmax,'Pmax')
-    !  call this%mfile%add_column(this%fs%Tmax,'Tmax')
-    !  call this%mfile%write()
-    !  ! Create CFL monitor
-    !  this%cflfile=monitor(this%fs%cfg%amRoot,'cfl')
-    !  call this%cflfile%add_column(this%time%n,'Timestep number')
-    !  call this%cflfile%add_column(this%time%t,'Time')
-    !  call this%cflfile%add_column(this%fs%CFLst,'STension CFL')
-    !  call this%cflfile%add_column(this%fs%CFLc_x,'Convective xCFL')
-    !  call this%cflfile%add_column(this%fs%CFLc_y,'Convective yCFL')
-    !  call this%cflfile%add_column(this%fs%CFLc_z,'Convective zCFL')
-    !  call this%cflfile%add_column(this%fs%CFLv_x,'Viscous xCFL')
-    !  call this%cflfile%add_column(this%fs%CFLv_y,'Viscous yCFL')
-    !  call this%cflfile%add_column(this%fs%CFLv_z,'Viscous zCFL')
-    !  call this%cflfile%add_column(this%fs%CFLa_x,'Acoustic xCFL')
-    !  call this%cflfile%add_column(this%fs%CFLa_y,'Acoustic yCFL')
-    !  call this%cflfile%add_column(this%fs%CFLa_z,'Acoustic zCFL')
-    !  call this%cflfile%write()
-    !  ! Create convergence monitor
-    !  this%cvgfile=monitor(this%fs%cfg%amRoot,'cvg')
-    !  call this%cvgfile%add_column(this%time%n,'Timestep number')
-    !  call this%cvgfile%add_column(this%time%it,'Iteration')
-    !  call this%cvgfile%add_column(this%time%t,'Time')
-    !  call this%cvgfile%add_column(this%fs%impl_it_x,'Impl_x iteration')
-    !  call this%cvgfile%add_column(this%fs%impl_rerr_x,'Impl_x error')
-    !  call this%cvgfile%add_column(this%fs%impl_it_y,'Impl_y iteration')
-    !  call this%cvgfile%add_column(this%fs%impl_rerr_y,'Impl_y error')
-    !  call this%cvgfile%add_column(this%fs%implicit%it,'Impl_z iteration')
-    !  call this%cvgfile%add_column(this%fs%implicit%rerr,'Impl_z error')
-    !  call this%cvgfile%add_column(this%fs%psolv%it,'Pressure iteration')
-    !  call this%cvgfile%add_column(this%fs%psolv%rerr,'Pressure error')
-    !end block create_monitor
+    create_monitor: block
+      print*, "AS shockgen class: monitor setup."
+      ! Prepare some info about fields
+      call this%fs%get_cfl(this%time%dt,this%time%cfl)
+      call this%fs%get_max()
+      call this%vf%get_max()
+      ! Create simulation monitor
+      this%mfile=monitor(this%fs%cfg%amRoot,'simulation')
+      call this%mfile%add_column(this%time%n,'Timestep number')
+      call this%mfile%add_column(this%time%t,'Time')
+      call this%mfile%add_column(this%time%dt,'Timestep size')
+      call this%mfile%add_column(this%time%cfl,'Maximum CFL')
+      call this%mfile%add_column(this%fs%RHOmin,'RHOmin')
+      call this%mfile%add_column(this%fs%RHOmax,'RHOmax')
+      call this%mfile%add_column(this%fs%Umax,'Umax')
+      call this%mfile%add_column(this%fs%Vmax,'Vmax')
+      call this%mfile%add_column(this%fs%Wmax,'Wmax')
+      call this%mfile%add_column(this%fs%Pmax,'Pmax')
+      call this%mfile%add_column(this%fs%Tmax,'Tmax')
+      call this%mfile%write()
+      ! Create CFL monitor
+      this%cflfile=monitor(this%fs%cfg%amRoot,'cfl')
+      call this%cflfile%add_column(this%time%n,'Timestep number')
+      call this%cflfile%add_column(this%time%t,'Time')
+      call this%cflfile%add_column(this%fs%CFLst,'STension CFL')
+      call this%cflfile%add_column(this%fs%CFLc_x,'Convective xCFL')
+      call this%cflfile%add_column(this%fs%CFLc_y,'Convective yCFL')
+      call this%cflfile%add_column(this%fs%CFLc_z,'Convective zCFL')
+      call this%cflfile%add_column(this%fs%CFLv_x,'Viscous xCFL')
+      call this%cflfile%add_column(this%fs%CFLv_y,'Viscous yCFL')
+      call this%cflfile%add_column(this%fs%CFLv_z,'Viscous zCFL')
+      call this%cflfile%add_column(this%fs%CFLa_x,'Acoustic xCFL')
+      call this%cflfile%add_column(this%fs%CFLa_y,'Acoustic yCFL')
+      call this%cflfile%add_column(this%fs%CFLa_z,'Acoustic zCFL')
+      call this%cflfile%write()
+      ! Create convergence monitor
+      this%cvgfile=monitor(this%fs%cfg%amRoot,'cvg')
+      call this%cvgfile%add_column(this%time%n,'Timestep number')
+      call this%cvgfile%add_column(this%time%it,'Iteration')
+      call this%cvgfile%add_column(this%time%t,'Time')
+      call this%cvgfile%add_column(this%fs%impl_it_x,'Impl_x iteration')
+      call this%cvgfile%add_column(this%fs%impl_rerr_x,'Impl_x error')
+      call this%cvgfile%add_column(this%fs%impl_it_y,'Impl_y iteration')
+      call this%cvgfile%add_column(this%fs%impl_rerr_y,'Impl_y error')
+      call this%cvgfile%add_column(this%fs%implicit%it,'Impl_z iteration')
+      call this%cvgfile%add_column(this%fs%implicit%rerr,'Impl_z error')
+      call this%cvgfile%add_column(this%fs%psolv%it,'Pressure iteration')
+      call this%cvgfile%add_column(this%fs%psolv%rerr,'Pressure error')
+      print*, "AS shockgen class: monitor setup finished."
+    end block create_monitor
   end subroutine init
 
   !> Take one time step with specified dt
   subroutine step(this)
     implicit none
     class(sgen), intent(inout) :: this
+
+    print*, "AS shockgen class: Stepping the simulation one timestep."
 
     ! Perform time integration in simulation.f90 file 
     ! Increment time
@@ -521,7 +540,7 @@ contains
     call this%vf%copy_interface_to_old() 
 
     ! Create in-cell reconstruction
-    call this%fs%flow_reconstruct(this%vf) 
+    call this%fs%flow_reconstruct(this%vf) ! AS *** we're getting hung up here *** --> in-cell flow reconstruction from fluxes
 
     ! Zero variables that will change during subiterations
     this%fs%P = 0.0_WP;this%fs%Pjx = 0.0_WP;this%fs%Pjy = 0.0_WP;this%fs%Pjz = 0.0_WP;this%fs%Hpjump = 0.0_WP
@@ -571,8 +590,8 @@ contains
     call this%fs%get_max()
     call this%vf%get_max()
     call this%fs%get_viz()
-    !call this%mfile%write()
-    !call this%cflfile%write()
+    call this%mfile%write()
+    call this%cflfile%write()
     
   end subroutine step
     
@@ -587,12 +606,15 @@ contains
     integer :: i,j,shock_index,n_shock,nx,nx_stretchL,nx_stretchR,nx_total,ny_center,nz_center
     real(WP) :: final_xshock, delta, start_ref,Lx
     real(WP) :: tol ! tolerance for finding final shock location in singlephase
-    real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, GP_profile, Ui_profile ! profile arrays
+    !real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, GP_profile, Ui_profile ! profile arrays
     real(WP), dimension(:),  allocatable :: Grho_center, GrhoE_center, GP_center, Ui_center,Grho_global,GrhoE_global,GP_global,Ui_global    ! centerline arrays
-    ! MPI call variables 
+
+    ! testing variables  
     integer :: idx,ierr,to_send
     integer, dimension(:), allocatable :: recvcounts, displs
 
+    print*, "shockgen class: Finalizing shockgen simulation"
+    
     call param_read('nx',nx);
     call param_read('Lx',Lx);  call param_read('Lx ref',start_ref);
     call param_read('n_shock',n_shock); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
@@ -616,7 +638,14 @@ contains
     allocate(this%Grho_profile(2*n_shock+1));allocate(this%GrhoE_profile(2*n_shock+1));allocate(this%Ui_profile(2*n_shock+1));allocate(this%GP_profile(2*n_shock+1))
     this%Grho_profile = 0.0_WP; this%GP_profile = 0.0_WP; this%GrhoE_profile = 0.0_WP; this%Ui_profile = 0.0_WP;
 
-    !! use MPI all gatherv send centerline data to root proc
+    !! use MPI all gatherv
+    !print*, "nproc: ", this%cfg%nproc
+    !print*, "iproc: ", this%cfg%iproc
+    !print*, "local grid size in x: ", this%cfg%nx_
+    !print*, "imin_ = ", this%cfg%imin_
+    !print*, "imax_ = ", this%cfg%imax_
+    !print*, "imax_ - imin_ = ", this%cfg%imax_ - this%cfg%imin_
+    !print*, "shock index for my proc: ", shock_index
     allocate(Grho_center(this%cfg%nx_)); Grho_center = 0.0_WP
     allocate(GrhoE_center(this%cfg%nx_)); GrhoE_center = 0.0_WP
     allocate(GP_center(this%cfg%nx_)); GP_center = 0.0_WP
@@ -636,16 +665,19 @@ contains
     !-----------------------------------------------------------------------
     allocate(recvcounts(this%cfg%nproc), displs(this%cfg%nproc))
     ! copy sizes into recvcounts
+    !print*, "rank = ", this%cfg%rank
+    !print*, "(iproc,jproc) = ", this%cfg%iproc,this%cfg%jproc
     if (((this%cfg%y(this%cfg%jmin_).le.0.0_WP).and.(this%cfg%y(this%cfg%jmax_).ge.0.0_WP)).and.(this%cfg%z(this%cfg%kmin_).le.0.0_WP).and.(this%cfg%z(this%cfg%kmax_).ge.0.0_WP))then ! check if our core is aligned with the center
-       to_send = this%cfg%nx_    ! if we're aligned with the center, send the number of local subdomain points 
+       to_send = this%cfg%nx_ ! if we're aligned with the center, send the number of local subdomain points 
     else
        to_send = 0 ! don't send anything if we're not aligned with the center
     end if
     
     ! communicate this across processors
-    call MPI_Allgather(to_send, 1, MPI_INTEGER, &      ! send one integer
+    call MPI_Allgather(to_send, 1, MPI_INTEGER, &   ! send one integer
                     recvcounts,    1, MPI_INTEGER, &   ! receive 1 per rank
                     MPI_COMM_WORLD, ierr )
+    !print*, "recvcounts = ", recvcounts
     
     ! first block always starts at element 0
     displs(1) = 0
@@ -693,6 +725,11 @@ contains
                      displs,                  & ! where in Grho_global to place each block
                      MPI_DOUBLE_PRECISION,             & ! data type of recv buffer
                      MPI_COMM_WORLD, ierr )     ! communicator
+    !print*, "Grho_global: ", Grho_global
+    !print*, "GrhoE_global: ", GrhoE_global
+    !print*, "GP_global: ", GP_global
+    !print*, "Ui_global: ", Ui_global
+    !print*, "XM_global: ", XM_global
 
     ! AS extract shock profile in serial on root proc
     if(amRoot)then
@@ -700,9 +737,9 @@ contains
        do i=this%cfg%imin,this%cfg%imax
           !print*, "i index: ", i
           if ((this%cfg%xm(i).lt.(final_xshock+tol)).and.(this%cfg%xm(i).gt.(final_xshock-tol))) then
-             !print*, "sgen: The shock has been found at index: ", i
+             print*, "The shock has been found at index: ", i
              shock_index=i
-             !print*, "sgen: stored shock index", shock_index
+             print*, "stored shock index", shock_index
           end if
        end do
        
@@ -713,7 +750,11 @@ contains
           this%Ui_profile(i-shock_index+n_shock+1) = Ui_global(i)
        end do
     end if
-    ! broadcast profile arrays to all other cores
+    !print*, "Grho_profile: ", this%Grho_profile
+    !print*, "GrhoE_profile: ", this%GrhoE_profile
+    !print*, "GP_profile: ", this%GP_profile
+    !print*, "Ui_profile: ", this%Ui_profile
+    ! do we need to communicate these to the other cores?  
     call MPI_BCAST(this%Grho_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
     call MPI_BCAST(this%GrhoE_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
     call MPI_BCAST(this%GP_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)

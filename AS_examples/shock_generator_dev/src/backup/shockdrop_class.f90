@@ -13,7 +13,6 @@ module shockdrop_class
   use hypre_str_class,   only: hypre_str
   use pardata_class,     only: pardata
   use param,             only: param_read
-  use shockgen_class,    only: sgen
   implicit none
   private
 
@@ -44,19 +43,16 @@ module shockdrop_class
      real(WP)           :: visc !AS is this needed? I borrowed this from Chase's shear layer pre-sim sml_class.f90
      integer            :: relax_model
      integer            :: shock_index,n_shock
-     real(WP) :: xshock,vshock,relshockvel
+     real(WP) :: xshock,vshock,relshockvel,tol,shock_loc
      real(WP) :: Grho0, GP0, Grho1, GP1, ST, Ma1, Ma, Lrho0, LP0, Mas, gamm_g
      !> Provide a pardata and an event tracker for saving restarts
      type(event)   :: save_evt
      type(pardata) :: df
      logical       :: restarted     
    contains
-     procedure, public :: init             !> initialize sgen simulation
-     procedure, public :: update_mixture_variables !> update mixture variables after shock profile
-     procedure :: writeIC                  !> write initial conditions to ensight
-     procedure :: step                     !> advance sgen simulation by one timestep
-     procedure :: final                    !> finalize sgen simulation
-     !procedure :: restart                  !> restart simulation from timestamp
+     procedure :: init  !> initialize sgen simulation
+     procedure :: step  !> advance sgen simulation by one timestep
+     procedure :: final !> finalize sgen simulation
   end type sdrop
 
 contains
@@ -79,10 +75,9 @@ contains
     G=1.0_WP-sqrt((xyz(1)-dctr(1))**2+(xyz(2)-dctr(2))**2+(xyz(3)-dctr(3))**2)/(ddrop/2.0)
   end function levelset_sphere
   
-  subroutine init(this,dt_in,dtmax_in)
+  subroutine init(this)
     implicit none
     class(sdrop), intent(inout) :: this
-    real(WP), intent(in) :: dt_in, dtmax_in
     
     ! Create mesh for sdrop
     create_sdrop_config: block
@@ -109,7 +104,7 @@ contains
       real(WP) :: dz,dz_old,dz_stretch
       integer :: nz_stretch
 
-      !print*, "AS: sdrop: mesh gen start"
+      print*, "AS shockdrop class: starting mesh generation."
 
       alpha=1.03_WP ! mesh stretching ratio
       ! Read in grid definition
@@ -236,39 +231,36 @@ contains
       ! Create partitioned grid
       this%cfg=config(grp=group,decomp=partition,grid=grid)
 
+      print*, "AS shockdrop class: Finished mesh generation."
+      
     end block  create_sdrop_config
 
     !> set up timetracker
     initialize_timetracker: block
       use param,             only: param_read
       use shockgen_class,    only: sgen
-      this%time=timetracker(amRoot=this%cfg%amRoot)
       call param_read('Max time',this%time%tmax)
-      call param_read('Max cfl number',this%time%cflmax)
+      !call param_read('Multiphase max timestep size',this%time%dtmax)
+      ! AS we update the shock drop timestep in simulation.f90 when we read in the shock profile
       call param_read('Max steps',this%time%nmax)
       !this%time%dt=this%time%dtmax
       this%time%itmax=2
-      this%time%dt = dt_in !shockgen%time%dt passed as arguments
-      this%time%dtmax = dtmax_in !shockgen%time%dtmax passed as arguments
     end block initialize_timetracker
 
     !> handle restart and saves here
     restart_and_save: block
-      use param,   only: param_read
+      use param, only: param_read
       use string,  only: str_medium
       use filesys, only: makedir,isdir
         
       character(len=str_medium) :: timestamp
       integer, dimension(3)     :: iopartition
 
-      print*, "RESTART BLOCK"
-
       ! create event for saving restart files
       this%save_evt=event(this%time,'Restart output')
       call param_read('Restart output period', this%save_evt%tper)
       ! check if we are restarting
       call param_read('Restart from', timestamp, default='')
-      print*, "timestamp = ", timestamp
       this%restarted=.false.; if(len_trim(timestamp).gt.0) this%restarted=.true.
       ! read in I/O partition
       call param_read('I/O partition',iopartition)
@@ -310,8 +302,8 @@ contains
       real(WP), dimension(:,:,:), allocatable :: P11,P12,P13,P14 
       real(WP), dimension(:,:,:), allocatable :: P21,P22,P23,P24
 
-      !print*, "AS: sdrop: VOF solver setup start"
-
+      print*, "AS shockdrop class: VOF solver setup."
+      
       ! Create a VOF solver with PLICnet reconstruction
       call this%vf%initialize(cfg=this%cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
 
@@ -443,15 +435,15 @@ contains
       ! apply boundary conditions on VOF
       call this%vf%apply_bcond(this%time%t,this%time%dt)
 
-      !print*, "AS: sdrop: VOF solver setup finish"
-
+      print*, "AS shockdrop class: VOF solver setup finished."
+      
     end block create_VOF_solver
 
     !> create two-phase compressible flow solver
     create_flow_solver: block
       use hypre_str_class, only: pcg_pfmg ! preconditioned conjugate gradient method for pressure and velocity
       use param,           only: param_read
-      !print*, "AS: sdrop: flow solver setup start"
+      print*, "AS shockdrop class: Flow solver setup."
       ! Create flow solver
       this%fs=mast(cfg=this%cfg,name='Two-phase All-Mach',vf=this%vf)
       ! Configure pressure solver
@@ -465,7 +457,7 @@ contains
       call param_read('Implicit tolerance',this%vs%rcvg)
       ! Setup the solver
       call this%fs%setup(pressure_solver=this%ps,implicit_solver=this%vs)
-      !print*, "AS: sdrop: flow solver setup finish"
+      print*, "AS shockdrop class: Flow solver setup finshed."
     end block create_flow_solver
 
     !> set initial and boundary  conditions
@@ -483,8 +475,12 @@ contains
       type(bcond), pointer :: mybc
 
       ! variables for shock profile
-      real(WP) :: final_xshock,dx
+      integer  :: n_shock,shock_index
+      real(WP) :: final_xshock,delta,dx,shock_loc,tol
 
+      ! set up for shock profile
+      call param_read('n_shock',n_shock) ! number of points to the left and right of shock for profile
+      
       ! Create material model class
       this%matmod=matm(cfg=this%cfg,name='Liquid-gas models')
       
@@ -528,7 +524,11 @@ contains
       vshock = -Ma1 * sqrt(gamm_g*GP1/Grho1) + Ma*sqrt(gamm_g*GP0/Grho0)
       !velocity at which the shock moves
       relshockvel = -Grho1*vshock/(Grho0-Grho1)
+
+      !determine shock profile thickness
       dx = Lx/nx ! mesh spacing in uniform region
+      tol = dx/2 ! set tolerance for reading in shock profile
+      delta = 2*dx*n_shock ! shock thickness
       
       if (amRoot) then
          print*, "===== Problem Setup Description ====="
@@ -536,8 +536,9 @@ contains
          print*, 'Pre-shock:  Density',Grho0,'Pressure',GP0
          print*, 'Post-shock: Density',Grho1,'Pressure',GP1,'Gas Velocity',vshock
          print*, 'Shock velocity', relshockvel
-         !print*, "Total shock profile points: ", 2*n_shock
-         !print*, "Shock thickness: ", delta
+         print*, "Total shock profile points: ", 2*n_shock
+         print*, "Shock thickness: ", delta
+         print*, "Tolerance for finding shock center: ", tol
          print*, "===================================="
       end if
 
@@ -836,36 +837,36 @@ contains
        end block create_smesh
 
        !> Add Ensight output
-       create_ensight: block
-         use param,           only: param_read
-         ! Create Ensight output from cfg
-         this%ens_out=ensight(cfg=this%cfg,name='ShockDroplet')
-         ! Create event for Ensight output
-         this%ens_evt=event(time=this%time,name='Ensight output')
-         call param_read('Ensight output period',this%ens_evt%tper)
-         ! Add variables to output
-         call this%ens_out%add_vector('velocity',this%fs%Ui,this%fs%Vi,this%fs%Wi)
-         call this%ens_out%add_scalar('P',this%fs%P)
-         call this%ens_out%add_scalar('PA',this%fs%PA)
-         call this%ens_out%add_scalar('Grho',this%fs%Grho)
-         call this%ens_out%add_scalar('Lrho',this%fs%Lrho)
-         call this%ens_out%add_scalar('Density',this%fs%RHO)
-         call this%ens_out%add_scalar('Bulkmod',this%fs%RHOSS2)
-         call this%ens_out%add_scalar('VOF',this%vf%VF)
-         call this%ens_out%add_scalar('curvature',this%vf%curv)
-         call this%ens_out%add_scalar('Mach',this%fs%Mach)
-         call this%ens_out%add_scalar('fvf',this%cfg%VF)
-         call this%ens_out%add_scalar('Tmptr',this%fs%Tmptr)
-         call this%ens_out%add_scalar('SL_x',this%fs%sl_x) 
-         call this%ens_out%add_scalar('SL_y',this%fs%sl_y) 
-         call this%ens_out%add_scalar('SL_z',this%fs%sl_z) 
-         call this%ens_out%add_scalar('LP',this%fs%LP) 
-         call this%ens_out%add_scalar('GP',this%fs%GP) 
-         call this%ens_out%add_scalar('LrhoE',this%fs%LrhoE) 
-         call this%ens_out%add_scalar('GrhoE',this%fs%GrhoE)         
-         ! Output to ensight
-         !if (this%ens_evt%occurs()) call this%ens_out%write_data(this%time%t)
-       end block create_ensight
+       !create_ensight: block
+       !  use param,           only: param_read
+       !  ! Create Ensight output from cfg
+       !  this%ens_out=ensight(cfg=this%cfg,name='ShockDroplet')
+       !  ! Create event for Ensight output
+       !  this%ens_evt=event(time=this%time,name='Ensight output')
+       !  call param_read('Ensight output period',this%ens_evt%tper)
+       !  ! Add variables to output
+       !  call this%ens_out%add_vector('velocity',this%fs%Ui,this%fs%Vi,this%fs%Wi)
+       !  call this%ens_out%add_scalar('P',this%fs%P)
+       !  call this%ens_out%add_scalar('PA',this%fs%PA)
+       !  call this%ens_out%add_scalar('Grho',this%fs%Grho)
+       !  call this%ens_out%add_scalar('Lrho',this%fs%Lrho)
+       !  call this%ens_out%add_scalar('Density',this%fs%RHO)
+       !  call this%ens_out%add_scalar('Bulkmod',this%fs%RHOSS2)
+       !  call this%ens_out%add_scalar('VOF',this%vf%VF)
+       !  call this%ens_out%add_scalar('curvature',this%vf%curv)
+       !  call this%ens_out%add_scalar('Mach',this%fs%Mach)
+       !  call this%ens_out%add_scalar('fvf',this%cfg%VF)
+       !  call this%ens_out%add_scalar('Tmptr',this%fs%Tmptr)
+       !  call this%ens_out%add_scalar('SL_x',this%fs%sl_x) 
+       !  call this%ens_out%add_scalar('SL_y',this%fs%sl_y) 
+       !  call this%ens_out%add_scalar('SL_z',this%fs%sl_z) 
+       !  call this%ens_out%add_scalar('LP',this%fs%LP) 
+       !  call this%ens_out%add_scalar('GP',this%fs%GP) 
+       !  call this%ens_out%add_scalar('LrhoE',this%fs%LrhoE) 
+       !  call this%ens_out%add_scalar('GrhoE',this%fs%GrhoE)         
+       !  ! Output to ensight
+       !  if (this%ens_evt%occurs()) call this%ens_out%write_data(this%time%t)
+       !end block create_ensight
 
        !> block for writing smesh data
        create_ensight_smesh: block
@@ -884,94 +885,66 @@ contains
          call this%ens_out_smesh%add_surface('smesh',this%smesh)
          
          ! output to ensight
-         !if (this%ens_evt_smesh%occurs()) call this%ens_out_smesh%write_data(this%time%t)
+         if (this%ens_evt_smesh%occurs()) call this%ens_out_smesh%write_data(this%time%t)
        end block create_ensight_smesh
 
        !> Create a monitor file
-       create_monitor: block
-         ! Prepare some info about fields
-         call this%fs%get_cfl(this%time%dt,this%time%cfl)
-         call this%fs%get_max()
-         call this%vf%get_max()
-        ! Create simulation monitor
-         this%mfile=monitor(this%fs%cfg%amRoot,'simulation')
-         call this%mfile%add_column(this%time%n,'Timestep number')
-         call this%mfile%add_column(this%time%t,'Time')
-         call this%mfile%add_column(this%time%dt,'Timestep size')
-         call this%mfile%add_column(this%time%cfl,'Maximum CFL')
-         call this%mfile%add_column(this%fs%RHOmin,'RHOmin')
-         call this%mfile%add_column(this%fs%RHOmax,'RHOmax')
-         call this%mfile%add_column(this%fs%Umax,'Umax')
-         call this%mfile%add_column(this%fs%Vmax,'Vmax')
-         call this%mfile%add_column(this%fs%Wmax,'Wmax')
-         call this%mfile%add_column(this%fs%Pmax,'Pmax')
-         call this%mfile%add_column(this%fs%Tmax,'Tmax')
-         call this%mfile%write()
-         ! Create CFL monitor
-         this%cflfile=monitor(this%fs%cfg%amRoot,'cfl')
-         call this%cflfile%add_column(this%time%n,'Timestep number')
-         call this%cflfile%add_column(this%time%t,'Time')
-         call this%cflfile%add_column(this%fs%CFLst,'STension CFL')
-         call this%cflfile%add_column(this%fs%CFLc_x,'Convective xCFL')
-         call this%cflfile%add_column(this%fs%CFLc_y,'Convective yCFL')
-         call this%cflfile%add_column(this%fs%CFLc_z,'Convective zCFL')
-         call this%cflfile%add_column(this%fs%CFLv_x,'Viscous xCFL')
-         call this%cflfile%add_column(this%fs%CFLv_y,'Viscous yCFL')
-         call this%cflfile%add_column(this%fs%CFLv_z,'Viscous zCFL')
-         call this%cflfile%add_column(this%fs%CFLa_x,'Acoustic xCFL')
-         call this%cflfile%add_column(this%fs%CFLa_y,'Acoustic yCFL')
-         call this%cflfile%add_column(this%fs%CFLa_z,'Acoustic zCFL')
-         call this%cflfile%write()
-         ! Create convergence monitor
-         this%cvgfile=monitor(this%fs%cfg%amRoot,'cvg')
-         call this%cvgfile%add_column(this%time%n,'Timestep number')
-         call this%cvgfile%add_column(this%time%it,'Iteration')
-         call this%cvgfile%add_column(this%time%t,'Time')
-         call this%cvgfile%add_column(this%fs%impl_it_x,'Impl_x iteration')
-         call this%cvgfile%add_column(this%fs%impl_rerr_x,'Impl_x error')
-         call this%cvgfile%add_column(this%fs%impl_it_y,'Impl_y iteration')
-         call this%cvgfile%add_column(this%fs%impl_rerr_y,'Impl_y error')
-         call this%cvgfile%add_column(this%fs%implicit%it,'Impl_z iteration')
-         call this%cvgfile%add_column(this%fs%implicit%rerr,'Impl_z error')
-         call this%cvgfile%add_column(this%fs%psolv%it,'Pressure iteration')
-         call this%cvgfile%add_column(this%fs%psolv%rerr,'Pressure error')
-       end block create_monitor
+       !create_monitor: block
+       !  ! Prepare some info about fields
+       !  call this%fs%get_cfl(this%time%dt,this%time%cfl)
+       !  call this%fs%get_max()
+       !  call this%vf%get_max()
+       !  ! Create simulation monitor
+       !  this%mfile=monitor(this%fs%cfg%amRoot,'simulation')
+       !  call this%mfile%add_column(this%time%n,'Timestep number')
+       !  call this%mfile%add_column(this%time%t,'Time')
+       !  call this%mfile%add_column(this%time%dt,'Timestep size')
+       !  call this%mfile%add_column(this%time%cfl,'Maximum CFL')
+       !  call this%mfile%add_column(this%fs%RHOmin,'RHOmin')
+       !  call this%mfile%add_column(this%fs%RHOmax,'RHOmax')
+       !  call this%mfile%add_column(this%fs%Umax,'Umax')
+       !  call this%mfile%add_column(this%fs%Vmax,'Vmax')
+       !  call this%mfile%add_column(this%fs%Wmax,'Wmax')
+       !  call this%mfile%add_column(this%fs%Pmax,'Pmax')
+       !  call this%mfile%add_column(this%fs%Tmax,'Tmax')
+       !  call this%mfile%write()
+       !  ! Create CFL monitor
+       !  this%cflfile=monitor(this%fs%cfg%amRoot,'cfl')
+       !  call this%cflfile%add_column(this%time%n,'Timestep number')
+       !  call this%cflfile%add_column(this%time%t,'Time')
+       !  call this%cflfile%add_column(this%fs%CFLst,'STension CFL')
+       !  call this%cflfile%add_column(this%fs%CFLc_x,'Convective xCFL')
+       !  call this%cflfile%add_column(this%fs%CFLc_y,'Convective yCFL')
+       !  call this%cflfile%add_column(this%fs%CFLc_z,'Convective zCFL')
+       !  call this%cflfile%add_column(this%fs%CFLv_x,'Viscous xCFL')
+       !  call this%cflfile%add_column(this%fs%CFLv_y,'Viscous yCFL')
+       !  call this%cflfile%add_column(this%fs%CFLv_z,'Viscous zCFL')
+       !  call this%cflfile%add_column(this%fs%CFLa_x,'Acoustic xCFL')
+       !  call this%cflfile%add_column(this%fs%CFLa_y,'Acoustic yCFL')
+       !  call this%cflfile%add_column(this%fs%CFLa_z,'Acoustic zCFL')
+       !  call this%cflfile%write()
+       !  ! Create convergence monitor
+       !  this%cvgfile=monitor(this%fs%cfg%amRoot,'cvg')
+       !  call this%cvgfile%add_column(this%time%n,'Timestep number')
+       !  call this%cvgfile%add_column(this%time%it,'Iteration')
+       !  call this%cvgfile%add_column(this%time%t,'Time')
+       !  call this%cvgfile%add_column(this%fs%impl_it_x,'Impl_x iteration')
+       !  call this%cvgfile%add_column(this%fs%impl_rerr_x,'Impl_x error')
+       !  call this%cvgfile%add_column(this%fs%impl_it_y,'Impl_y iteration')
+       !  call this%cvgfile%add_column(this%fs%impl_rerr_y,'Impl_y error')
+       !  call this%cvgfile%add_column(this%fs%implicit%it,'Impl_z iteration')
+       !  call this%cvgfile%add_column(this%fs%implicit%rerr,'Impl_z error')
+       !  call this%cvgfile%add_column(this%fs%psolv%it,'Pressure iteration')
+       !  call this%cvgfile%add_column(this%fs%psolv%rerr,'Pressure error')
+       !end block create_monitor
      end subroutine init
 
-     !> write initial condition to ensight
-     subroutine writeIC(this)
-       implicit none
-       class(sdrop), intent(inout) :: this
-       if (this%ens_evt%occurs()) call this%ens_out%write_data(this%time%t)
-       if (this%ens_evt_smesh%occurs()) call this%ens_out_smesh%write_data(this%time%t)
-     end subroutine writeIC
-
-     subroutine update_mixture_variables(this)
-       use mast_class, only: mech_egy_mech_hhz
-       implicit none
-       class(sdrop), intent(inout) :: this
-       
-       ! Calculate mixture density and momenta
-       this%fs%RHO   = (1.0_WP-this%vf%VF)*this%fs%Grho  + this%vf%VF*this%fs%Lrho
-       this%fs%rhoUi = this%fs%RHO*this%fs%Ui; this%fs%rhoVi = this%fs%RHO*this%fs%Vi; this%fs%rhoWi = this%fs%RHO*this%fs%Wi
-       
-       ! set pressure relax model
-       this%relax_model = mech_egy_mech_hhz
-       ! Perform initial pressure relax
-       call this%fs%pressure_relax(this%vf,this%matmod,this%relax_model)
-       
-       ! Calculate initial phase and bulk moduli
-       call this%fs%init_phase_bulkmod(this%vf,this%matmod)
-       call this%fs%reinit_phase_pressure(this%vf,this%matmod)
-       call this%fs%harmonize_advpressure_bulkmod(this%vf,this%matmod)
-     end subroutine update_mixture_variables
-       
      !> advance shock drop simualation by dt
      subroutine step(this)
        use messager, only: die
        implicit none
        class(sdrop), intent(inout) :: this
-
+       
        ! Perform time integration in simulation.f90 file 
        ! Increment time
        call this%fs%get_cfl(this%time%dt,this%time%cfl)
@@ -1024,7 +997,7 @@ contains
           call this%fs%pressureproj_correct(this%time%dt,this%vf,this%fs%psolv%sol)
           
           ! Record convergence monitor
-          call this%cvgfile%write()
+          !call this%cvgfile%write()
           ! Increment sub-iteration counter
           this%time%it=this%time%it+1
           
@@ -1034,11 +1007,11 @@ contains
        call this%fs%pressure_relax(this%vf,this%matmod,this%relax_model)
        
        ! Output to ensight
-       if (this%ens_evt%occurs()) then
-          call this%ens_out%write_data(this%time%t)            
-       end if
+       !if (this%ens_evt%occurs()) then
+       !   call this%ens_out%write_data(this%time%t)            
+       !end if
 
-       if (this%ens_evt_smesh%occurs()) then
+       if ( this%ens_evt_smesh%occurs()) then
           !update surfmesh object
           update_smesh: block
             use irl_fortran_interface
@@ -1061,6 +1034,7 @@ contains
                end do
             end do
           end block update_smesh
+            
           call this%ens_out_smesh%write_data(this%time%t)
        end if
        
@@ -1068,8 +1042,8 @@ contains
        call this%fs%get_max()
        call this%vf%get_max()
        call this%fs%get_viz()
-       call this%mfile%write()
-       call this%cflfile%write()
+       !call this%mfile%write()
+       !call this%cflfile%write()
 
        if (this%save_evt%occurs())then
           save_restart: block

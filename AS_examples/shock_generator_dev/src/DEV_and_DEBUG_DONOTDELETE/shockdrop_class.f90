@@ -52,11 +52,10 @@ module shockdrop_class
      logical       :: restarted     
    contains
      procedure, public :: init             !> initialize sgen simulation
-     procedure, public :: update_mixture_variables !> update mixture variables after shock profile
      procedure :: writeIC                  !> write initial conditions to ensight
      procedure :: step                     !> advance sgen simulation by one timestep
      procedure :: final                    !> finalize sgen simulation
-     !procedure :: restart                  !> restart simulation from timestamp
+     procedure, public :: update_mixture_variables !> update mixture variables after shock profile
   end type sdrop
 
 contains
@@ -236,6 +235,8 @@ contains
       ! Create partitioned grid
       this%cfg=config(grp=group,decomp=partition,grid=grid)
 
+      !print*, "AS: sdrop: mesh gen finish"
+
     end block  create_sdrop_config
 
     !> set up timetracker
@@ -260,8 +261,6 @@ contains
         
       character(len=str_medium) :: timestamp
       integer, dimension(3)     :: iopartition
-
-      print*, "RESTART BLOCK"
 
       ! create event for saving restart files
       this%save_evt=event(this%time,'Restart output')
@@ -483,8 +482,14 @@ contains
       type(bcond), pointer :: mybc
 
       ! variables for shock profile
+      !integer  :: n_shock,shock_index
       real(WP) :: final_xshock,dx
 
+      !print*, "AS: sdrop: IC setup start"
+
+      ! set up for shock profile
+      !call param_read('n_shock',n_shock) ! number of points to the left and right of shock for profile
+      
       ! Create material model class
       this%matmod=matm(cfg=this%cfg,name='Liquid-gas models')
       
@@ -528,7 +533,10 @@ contains
       vshock = -Ma1 * sqrt(gamm_g*GP1/Grho1) + Ma*sqrt(gamm_g*GP0/Grho0)
       !velocity at which the shock moves
       relshockvel = -Grho1*vshock/(Grho0-Grho1)
+
+      !determine shock profile thickness
       dx = Lx/nx ! mesh spacing in uniform region
+      !delta = 2*dx*n_shock ! shock thickness
       
       if (amRoot) then
          print*, "===== Problem Setup Description ====="
@@ -622,6 +630,8 @@ contains
          
          ! Set initial pressure to harmonized field based on internal energy
          this%fs%P = this%fs%PA
+
+         !print*, "AS: sdrop: IC setup finish"
 
       else ! we are restarting
          ! Read data
