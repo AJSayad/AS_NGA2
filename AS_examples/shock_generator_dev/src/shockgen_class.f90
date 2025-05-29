@@ -6,11 +6,10 @@ module shockgen_class
   use vfs_class,         only: vfs
   use matm_class,        only: matm
   use timetracker_class, only: timetracker
-  use ensight_class,     only: ensight
-  use event_class,       only: event
-  use monitor_class,     only: monitor
+  !use ensight_class,     only: ensight
+  !use event_class,       only: event
+  !use monitor_class,     only: monitor
   use hypre_str_class,   only: hypre_str
-  use pardata_class,     only: pardata
   implicit none
   private
 
@@ -28,12 +27,11 @@ module shockgen_class
      type(hypre_str)    :: ps
      type(hypre_str)    :: vs
      !> Ensight postprocessing
-     type(ensight)      :: ens_out
-     type(event)        :: ens_evt
+     !type(ensight)      :: ens_out
+     !type(event)        :: ens_evt
      !> Simulation monitor file
-     type(monitor)      :: mfile,cflfile,cvgfile
+     !type(monitor)      :: mfile,cflfile,cvgfile
      !> Fluid parameters
-     real(WP)           :: visc !AS is this needed? I borrowed this from Chase's shear layer pre-sim sml_class.f90
      real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, Ui_profile, GP_profile
      integer            :: relax_model
    contains
@@ -55,7 +53,7 @@ contains
       use sgrid_class, only: cartesian,sgrid
       use param,       only: param_read, param_exists
       use parallel,    only: amRoot,group
-      use messager,    only: die
+      !use messager,    only: die
       type(sgrid) :: grid
       integer, dimension(3) :: partition
       integer  :: i,j,k,nx,ny,nz
@@ -413,36 +411,36 @@ contains
       
     !> singlephase, no need for smesh
     !> create ensight output
-    create_ensight: block
-      use param,           only: param_read
-      ! Create Ensight output from cfg
-      this%ens_out=ensight(cfg=this%cfg,name='Shockgen')
-      ! Create event for Ensight output
-      this%ens_evt=event(time=this%time,name='Ensight output')
-      call param_read('Ensight output period',this%ens_evt%tper)
-      ! Add variables to output
-      call this%ens_out%add_vector('velocity',this%fs%Ui,this%fs%Vi,this%fs%Wi)
-      call this%ens_out%add_scalar('P',this%fs%P)
-      call this%ens_out%add_scalar('PA',this%fs%PA)
-      call this%ens_out%add_scalar('Grho',this%fs%Grho)
-      call this%ens_out%add_scalar('Lrho',this%fs%Lrho)
-      call this%ens_out%add_scalar('Density',this%fs%RHO)
-      call this%ens_out%add_scalar('Bulkmod',this%fs%RHOSS2)
-      call this%ens_out%add_scalar('VOF',this%vf%VF)
-      call this%ens_out%add_scalar('curvature',this%vf%curv)
-      call this%ens_out%add_scalar('Mach',this%fs%Mach)
-      call this%ens_out%add_scalar('fvf',this%cfg%VF)
-      call this%ens_out%add_scalar('Tmptr',this%fs%Tmptr)
-      call this%ens_out%add_scalar('SL_x',this%fs%sl_x) 
-      call this%ens_out%add_scalar('SL_y',this%fs%sl_y) 
-      call this%ens_out%add_scalar('SL_z',this%fs%sl_z) 
-      call this%ens_out%add_scalar('LP',this%fs%LP) 
-      call this%ens_out%add_scalar('GP',this%fs%GP) 
-      call this%ens_out%add_scalar('LrhoE',this%fs%LrhoE) 
-      call this%ens_out%add_scalar('GrhoE',this%fs%GrhoE)         
-      ! Output to ensight
-      if (this%ens_evt%occurs()) call this%ens_out%write_data(this%time%t)
-    end block create_ensight
+    !create_ensight: block
+    !  use param,           only: param_read
+    !  ! Create Ensight output from cfg
+    !  this%ens_out=ensight(cfg=this%cfg,name='Shockgen')
+    !  ! Create event for Ensight output
+    !  this%ens_evt=event(time=this%time,name='Ensight output')
+    !  call param_read('Ensight output period',this%ens_evt%tper)
+    !  ! Add variables to output
+    !  call this%ens_out%add_vector('velocity',this%fs%Ui,this%fs%Vi,this%fs%Wi)
+    !  call this%ens_out%add_scalar('P',this%fs%P)
+    !  call this%ens_out%add_scalar('PA',this%fs%PA)
+    !  call this%ens_out%add_scalar('Grho',this%fs%Grho)
+    !  call this%ens_out%add_scalar('Lrho',this%fs%Lrho)
+    !  call this%ens_out%add_scalar('Density',this%fs%RHO)
+    !  call this%ens_out%add_scalar('Bulkmod',this%fs%RHOSS2)
+    !  call this%ens_out%add_scalar('VOF',this%vf%VF)
+    !  call this%ens_out%add_scalar('curvature',this%vf%curv)
+    !  call this%ens_out%add_scalar('Mach',this%fs%Mach)
+    !  call this%ens_out%add_scalar('fvf',this%cfg%VF)
+    !  call this%ens_out%add_scalar('Tmptr',this%fs%Tmptr)
+    !  call this%ens_out%add_scalar('SL_x',this%fs%sl_x) 
+    !  call this%ens_out%add_scalar('SL_y',this%fs%sl_y) 
+    !  call this%ens_out%add_scalar('SL_z',this%fs%sl_z) 
+    !  call this%ens_out%add_scalar('LP',this%fs%LP) 
+    !  call this%ens_out%add_scalar('GP',this%fs%GP) 
+    !  call this%ens_out%add_scalar('LrhoE',this%fs%LrhoE) 
+    !  call this%ens_out%add_scalar('GrhoE',this%fs%GrhoE)         
+    !  ! Output to ensight
+    !  if (this%ens_evt%occurs()) call this%ens_out%write_data(this%time%t)
+    !end block create_ensight
 
     !> Create a monitor file
     !create_monitor: block
@@ -553,7 +551,7 @@ contains
        call this%fs%pressureproj_correct(this%time%dt,this%vf,this%fs%psolv%sol)
 
        ! Record convergence monitor
-       call this%cvgfile%write()
+       !call this%cvgfile%write()
 
        ! Increment sub-iteration counter
        this%time%it=this%time%it+1
@@ -563,14 +561,14 @@ contains
     call this%fs%pressure_relax(this%vf,this%matmod,this%relax_model)
     
     ! Output to ensight
-    if (this%ens_evt%occurs()) then
-       call this%ens_out%write_data(this%time%t)            
-    end if
+    !if (this%ens_evt%occurs()) then
+    !   call this%ens_out%write_data(this%time%t)            
+    !end if
     
     ! Perform and output monitoring
-    call this%fs%get_max()
-    call this%vf%get_max()
-    call this%fs%get_viz()
+    !call this%fs%get_max()
+    !call this%vf%get_max()
+    !call this%fs%get_viz()
     !call this%mfile%write()
     !call this%cflfile%write()
     

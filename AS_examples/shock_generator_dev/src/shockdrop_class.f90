@@ -261,14 +261,11 @@ contains
       character(len=str_medium) :: timestamp
       integer, dimension(3)     :: iopartition
 
-      print*, "RESTART BLOCK"
-
       ! create event for saving restart files
       this%save_evt=event(this%time,'Restart output')
       call param_read('Restart output period', this%save_evt%tper)
       ! check if we are restarting
       call param_read('Restart from', timestamp, default='')
-      print*, "timestamp = ", timestamp
       this%restarted=.false.; if(len_trim(timestamp).gt.0) this%restarted=.true.
       ! read in I/O partition
       call param_read('I/O partition',iopartition)
@@ -443,15 +440,12 @@ contains
       ! apply boundary conditions on VOF
       call this%vf%apply_bcond(this%time%t,this%time%dt)
 
-      !print*, "AS: sdrop: VOF solver setup finish"
-
     end block create_VOF_solver
 
     !> create two-phase compressible flow solver
     create_flow_solver: block
       use hypre_str_class, only: pcg_pfmg ! preconditioned conjugate gradient method for pressure and velocity
       use param,           only: param_read
-      !print*, "AS: sdrop: flow solver setup start"
       ! Create flow solver
       this%fs=mast(cfg=this%cfg,name='Two-phase All-Mach',vf=this%vf)
       ! Configure pressure solver
@@ -465,7 +459,6 @@ contains
       call param_read('Implicit tolerance',this%vs%rcvg)
       ! Setup the solver
       call this%fs%setup(pressure_solver=this%ps,implicit_solver=this%vs)
-      !print*, "AS: sdrop: flow solver setup finish"
     end block create_flow_solver
 
     !> set initial and boundary  conditions
