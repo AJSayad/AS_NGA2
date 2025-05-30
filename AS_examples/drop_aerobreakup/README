@@ -1,0 +1,10 @@
+Shock droplet interaction/drop aerobreakup simulation.
+
+Consists of:
+simulation.f90      --> runs full simulation, calls shockgenerator, copies shock profile, calls shock droplet
+shockgen_class.f90  --> runs a singlephase steady shock, copies shock profile
+shockdrop_class.f90 --> full shock droplet/aerobreakup class, runs multiphase simulation with numerically init shock
+
+Notes:
+1) shock profile handled between shockgen%final() subroutine and simulation.f90
+2) restart logic is still built into shockdrop%init() subroutine 5/30/2025 (this will eventually be moved to it's own subroutine at some point)
