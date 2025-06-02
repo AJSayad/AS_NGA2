@@ -24,10 +24,10 @@ contains
       integer :: n_shock
 
       call param_read('n_shock',n_shock)
-      allocate(savedGrho_profile(n_shock));savedGrho_profile   = 0.0_WP
-      allocate(savedGP_profile(n_shock));savedGP_profile       = 0.0_WP
-      allocate(savedGrhoE_profile(n_shock));savedGrhoE_profile = 0.0_WP
-      allocate(savedUi_profile(n_shock));savedUi_profile       = 0.0_WP
+      allocate(savedGrho_profile(2*n_shock+1));savedGrho_profile   = 0.0_WP
+      allocate(savedGP_profile(2*n_shock+1));savedGP_profile       = 0.0_WP
+      allocate(savedGrhoE_profile(2*n_shock+1));savedGrhoE_profile = 0.0_WP
+      allocate(savedUi_profile(2*n_shock+1));savedUi_profile       = 0.0_WP
       
       ! initialize the shock generator sim
       call shockgen%init()
@@ -86,10 +86,10 @@ contains
 
          do i=shockdrop%cfg%imin_,shockdrop%cfg%imax_
             if ((shockdrop%cfg%xm(i).ge.(shock_loc-n_shock*dx).and.(shockdrop%cfg%xm(i).le.(shock_loc+n_shock*dx))))then
-               shockdrop%fs%Grho(i,:,:)  = savedGrho_profile(i+n_shock-shock_index+1) !shockgen%Grho_profile(i+n_shock-shock_index+1)
-               shockdrop%fs%GP(i,:,:)    = savedGP_profile(i+n_shock-shock_index+1) !shockgen%GP_profile(i+n_shock-shock_index+1)
-               shockdrop%fs%GrhoE(i,:,:) = savedGrhoE_profile(i+n_shock-shock_index+1) !shockgen%GrhoE_profile(i+n_shock-shock_index+1)
-               shockdrop%fs%Ui(i,:,:)    = savedUi_profile(i+n_shock-shock_index+1) !shockgen%Ui_profile(i+n_shock-shock_index+1)
+               shockdrop%fs%Grho(i,:,:)  = savedGrho_profile(i+n_shock-shock_index+1)
+               shockdrop%fs%GP(i,:,:)    = savedGP_profile(i+n_shock-shock_index+1)
+               shockdrop%fs%GrhoE(i,:,:) = savedGrhoE_profile(i+n_shock-shock_index+1)
+               shockdrop%fs%Ui(i,:,:)    = savedUi_profile(i+n_shock-shock_index+1) 
             end if
          end do
          call shockdrop%update_mixture_variables() ! update mixture density, bulkmod, and momenta
@@ -111,6 +111,10 @@ contains
   
   !> finalize simulation
   subroutine simulation_final
+    ! deallocate work arrays
+    deallocate(savedGrho_profile);deallocate(savedGP_profile);deallocate(savedGrhoE_profile);deallocate(savedUi_profile)
+    deallocate(saved_dt);deallocated(saved_dtmax)
+    
     call shockdrop%final()
   end subroutine simulation_final
   
