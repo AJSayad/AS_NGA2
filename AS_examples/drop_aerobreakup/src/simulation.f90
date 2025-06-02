@@ -113,7 +113,7 @@ contains
   subroutine simulation_final
     ! deallocate work arrays
     deallocate(savedGrho_profile);deallocate(savedGP_profile);deallocate(savedGrhoE_profile);deallocate(savedUi_profile)
-    deallocate(saved_dt);deallocated(saved_dtmax)
+    !deallocate(saved_dt);deallocate(saved_dtmax)
     
     call shockdrop%final()
   end subroutine simulation_final
