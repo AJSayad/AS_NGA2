@@ -3,62 +3,45 @@ module simulation
   use precision,         only: WP
   use shockgen_class,    only: sgen
   use shockdrop_class,   only: sdrop
+  use ensight_class,     only: ensight
+  use event_class,       only: event
+  use mast_class,        only: mast
+  use matm_class,        only: matm
   use param,             only: param_read
   implicit none
   private
 
-  ! modul level storage for profile arrays
-  real(WP),public,dimension(:), allocatable :: savedGrho_profile, savedGP_profile, savedGrhoE_profile, savedUi_profile
-  real(WP) :: saved_dt,saved_dtmax
+  !> shock generator simulation
+  type(sgen) ::  shockgen
+
   !> shock droplet simulation
   type(sdrop) :: shockdrop
 
-  public :: run_shock_generator,simulation_init,simulation_run,simulation_final
+  public :: simulation_init,simulation_run,simulation_final
 
 contains
-
-  subroutine run_shock_generator
-    shock_generator: block
-      !> shock generator simulation
-      type(sgen) ::  shockgen
-      integer :: n_shock
-
-      call param_read('n_shock',n_shock)
-      allocate(savedGrho_profile(n_shock));savedGrho_profile   = 0.0_WP
-      allocate(savedGP_profile(n_shock));savedGP_profile       = 0.0_WP
-      allocate(savedGrhoE_profile(n_shock));savedGrhoE_profile = 0.0_WP
-      allocate(savedUi_profile(n_shock));savedUi_profile       = 0.0_WP
-      
-      ! initialize the shock generator sim
-      call shockgen%init()
-      ! run shock generator
-      do while (.not.shockgen%time%done())
-         ! advance shock generator sim by one step
-         call shockgen%step()
-      end do
-      call shockgen%final()
-
-      ! explicitly copy variables here
-      savedGrho_profile  = shockgen%Grho_profile
-      savedGP_profile    = shockgen%GP_profile
-      savedGrhoE_profile = shockgen%GrhoE_profile
-      savedUi_profile    = shockgen%Ui_profile
-      saved_dt = shockgen%time%dt
-      saved_dtmax = shockgen%time%dtmax
-    end block shock_generator
-
-  end subroutine run_shock_generator
 
   !> initialize full simulation
   subroutine simulation_init
 
-    if(.not.shockdrop%restarted)then
-       call run_shock_generator
+    ! initialize the shock generator sim
+    if (.not.shockdrop%restarted)then
+       call shockgen%init()
     end if
-    
+
+    ! initialize coupler if needed
+    if (.not.shockdrop%restarted)then
+       do while (.not.shockgen%time%done())
+          ! advance shock generator sim by one step
+          call shockgen%step()
+       end do
+       call shockgen%final()
+    end if
+
     ! initialize shock droplet sim
     ! note: restart logic is still built into shockdrop%init subroutine
-    call shockdrop%init(saved_dt,saved_dtmax)
+    call shockdrop%init(shockgen%time%dt,shockgen%time%dtmax)
+
     ! add coupling block if needed
     shock_profile: block
       integer :: i,n_shock,shock_index
@@ -86,10 +69,10 @@ contains
 
          do i=shockdrop%cfg%imin_,shockdrop%cfg%imax_
             if ((shockdrop%cfg%xm(i).ge.(shock_loc-n_shock*dx).and.(shockdrop%cfg%xm(i).le.(shock_loc+n_shock*dx))))then
-               shockdrop%fs%Grho(i,:,:)  = savedGrho_profile(i+n_shock-shock_index+1) !shockgen%Grho_profile(i+n_shock-shock_index+1)
-               shockdrop%fs%GP(i,:,:)    = savedGP_profile(i+n_shock-shock_index+1) !shockgen%GP_profile(i+n_shock-shock_index+1)
-               shockdrop%fs%GrhoE(i,:,:) = savedGrhoE_profile(i+n_shock-shock_index+1) !shockgen%GrhoE_profile(i+n_shock-shock_index+1)
-               shockdrop%fs%Ui(i,:,:)    = savedUi_profile(i+n_shock-shock_index+1) !shockgen%Ui_profile(i+n_shock-shock_index+1)
+               shockdrop%fs%Grho(i,:,:)  = shockgen%Grho_profile(i+n_shock-shock_index+1)
+               shockdrop%fs%GP(i,:,:)    = shockgen%GP_profile(i+n_shock-shock_index+1)
+               shockdrop%fs%GrhoE(i,:,:) = shockgen%GrhoE_profile(i+n_shock-shock_index+1)
+               shockdrop%fs%Ui(i,:,:)    = shockgen%Ui_profile(i+n_shock-shock_index+1)
             end if
          end do
          call shockdrop%update_mixture_variables() ! update mixture density, bulkmod, and momenta
