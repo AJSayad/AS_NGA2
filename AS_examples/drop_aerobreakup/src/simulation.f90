@@ -84,14 +84,16 @@ contains
             end if
          end do
 
-         do i=shockdrop%cfg%imin_,shockdrop%cfg%imax_
-            if ((shockdrop%cfg%xm(i).ge.(shock_loc-n_shock*dx).and.(shockdrop%cfg%xm(i).le.(shock_loc+n_shock*dx))))then
+         do i=shockdrop%cfg%imino_,shockdrop%cfg%imaxo_
+            !if ((shockdrop%cfg%xm(i).ge.(shock_loc-n_shock*dx).and.(shockdrop%cfg%xm(i).le.(shock_loc+n_shock*dx))))then
+            if ((i.ge.shock_index-n_shock).and.(i.le.shock_index+n_shock))then
                shockdrop%fs%Grho(i,:,:)  = savedGrho_profile(i+n_shock-shock_index+1)
                shockdrop%fs%GP(i,:,:)    = savedGP_profile(i+n_shock-shock_index+1)
                shockdrop%fs%GrhoE(i,:,:) = savedGrhoE_profile(i+n_shock-shock_index+1)
                shockdrop%fs%Ui(i,:,:)    = savedUi_profile(i+n_shock-shock_index+1) 
             end if
          end do
+         
          call shockdrop%update_mixture_variables() ! update mixture density, bulkmod, and momenta
          call shockdrop%writeIC() ! write IC
       else

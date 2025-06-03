@@ -640,7 +640,7 @@ contains
     ! AS extract shock profile in serial on root proc
     if(amRoot)then
        shock_index = 0 ! initialize shock index to zero
-       do i=this%cfg%imin,this%cfg%imax
+       do i=this%cfg%imin_,this%cfg%imax_
           !print*, "i index: ", i
           if ((this%cfg%xm(i).lt.(final_xshock+tol)).and.(this%cfg%xm(i).gt.(final_xshock-tol))) then
              !print*, "sgen: The shock has been found at index: ", i
@@ -649,13 +649,12 @@ contains
           end if
        end do
        
-       do i=shock_index-n_shock,shock_index+n_shock 
+       do i=shock_index-n_shock,shock_index+n_shock ! this is now writing 2*n_shock points
           this%Grho_profile(i-shock_index+n_shock+1) = Grho_global(i)
           this%GrhoE_profile(i-shock_index+n_shock+1) = GrhoE_global(i)
           this%GP_profile(i-shock_index+n_shock+1) = GP_global(i)
           this%Ui_profile(i-shock_index+n_shock+1) = Ui_global(i)
        end do
-
     end if
 
     ! broadcast profile arrays to all other cores (we do this since we find the shock profile only on the root proc)
