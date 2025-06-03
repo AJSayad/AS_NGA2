@@ -26,11 +26,9 @@ Pre-shock density :   1.17
 Pre-shock pressure :  1.01e5
 
 # init sim setup
-Profile extraction flag: false
 n_shock :  3   # shock profile points (left and right of center)
 Single phase shock location: 0.001     # singlephase simulation starting shock location
 Final shock location :       0.003     # singlephase simulation final shock location
-Max timestep size :          5.13e-9 
 
 # Fluid properties
 Liquid dynamic viscosity :    0
@@ -46,7 +44,7 @@ Liquid density :              1000
 Surface tension coefficient : 0.0
 
 # Time integration
-Multiphase max timestep size: 5.13000E-09
+Max timestep size :          5.13e-9 
 Max cfl number :    0.5
 Max time :     	  1e-4 #3e-5 
 Max steps :	  1000000000
