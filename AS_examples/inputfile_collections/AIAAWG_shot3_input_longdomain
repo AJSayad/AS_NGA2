@@ -5,9 +5,9 @@ I/O partition: 1 1 1
 ### 2D 100CPD ###
 
 # Mesh definition
-Lx :	0.0224 # 6*d0  #0.0112  # end of the refined region
+Lx :	0.0224 # 12*d0 end of the refined region
 Lx ref: 0.0 # start of the refined uniform region in x direction
-nx :	1200 #600
+nx :	1200 
 nx stretch right: 75 #number of points to add at the right of domain for stretching
 nx stretch left:  0   #number of points to add at the left of domain for stretching
 Ly :	0.0056  # total uniform region height 
