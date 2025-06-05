@@ -1,21 +1,21 @@
 # Parallelization
-Partition : 11 2 1
+Partition : 8 2 1
 I/O partition: 1 1 1
 
 ### 2D 100CPD ###
 
 # Mesh definition
-Lx :	0.0224 # 12*d0 end of the refined region
-Lx ref: 0.0 # start of the refined uniform region in x direction
-nx :	1200 
-nx stretch right: 75 #number of points to add at the right of domain for stretching
-nx stretch left:  0   #number of points to add at the left of domain for stretching
-Ly :	0.0056  # total uniform region height 
-ny :	300 #3*d0  # number of cells in the uniform region
-ny stretch : 275 # number of cells to add for stretching (i.e. ny_total = 2*ny_stretch + ny)
-Lz : 	3.74e-6
-nz:     1 # number of cells in the uniform region
-nz stretch : 0 # number of cells to add for stretching (i.e. nz_total = 2*nz_stretch + nz) 
+Lx :	0.0224       # 12*d0 end of the refined region
+Lx ref: 0.0          # start of the refined uniform region in x direction
+nx :	1200         # number of cells in x in uniform region
+nx stretch right: 75 # number of points to add at the right of domain for stretching
+nx stretch left:  0  # number of points to add at the left of domain for stretching
+Ly :	0.00747      # total uniform region height 
+ny :	400          # 4*d0  # number of cells in the uniform region
+ny stretch : 175     # number of cells to add for stretching (i.e. ny_total = 2*ny_stretch + ny)
+Lz : 	3.74e-6      # domain length in z direction
+nz:     1            # number of cells in the uniform region
+nz stretch : 0       # number of cells to add for stretching (i.e. nz_total = 2*nz_stretch + nz) 
 
 # Flow setup
 Droplet diameter :   0.00187
@@ -44,10 +44,10 @@ Liquid density :              1000
 Surface tension coefficient : 0.0
 
 # Time integration
-Max timestep size :          5.13e-9 
+Max timestep size : 5.13e-9 
 Max cfl number :    0.5
-Max time :     	  1e-4 #3e-5 
-Max steps :	  1000000000
+Max time :     	    1e-4
+Max steps :	    1000000000
 
 # Pressure solver
 Pressure tolerance : 1e-6
