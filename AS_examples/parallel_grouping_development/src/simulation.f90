@@ -29,6 +29,8 @@ contains
     use mpi_f08, only: MPI_Group
     implicit none
 
+    print*, "simulation.f09 running."
+
     call param_read('n_shock',n_shock)
     allocate(savedGrho_profile(2*n_shock+1));savedGrho_profile   = 0.0_WP
     allocate(savedGP_profile(2*n_shock+1));savedGP_profile       = 0.0_WP
@@ -41,20 +43,20 @@ contains
     ! Create an MPI group using 1D decomposition in x
     create_shockgen_group: block
       use parallel, only: group,comm
-      use mpi_f08,  only: MPI_Group_incl,MPI_CART_RANK
+      use mpi_f08,  only: MPI_Group_incl!,MPI_CART_RANK
       integer, dimension(:), allocatable :: ranks
       integer, dimension(3) :: coord
       integer :: n,ngrp,ierr,ncores
-      ngrp=shockdrop%cfg%npx
-      allocate(ranks(ngrp))
+      ngrp=shockdrop%cfg%npx ! keep domain decomp in x only
+      allocate(ranks(ngrp))  ! allocate ranks
       ngrp=0
-      do ncores=1,shockdrop%cfg%npx
+      do ncores=1,shockdrop%cfg%npx ! loop over cores in x direction
          ngrp=ngrp+1
-         coord=[ncores-1,0,0]
-         call MPI_CART_RANK(shockdrop%cfg%comm,coord,ranks(ngrp),ierr)
-      end do
-      call MPI_Group_incl(group,ngrp,ranks,shockgen_group,ierr)
-      if ((shockdrop%cfg%jproc.eq.1).and.(shockdrop%cfg%kproc.eq.1)) then
+         coord=[ncores-1,0,0]       ! assign coordinates 
+         call MPI_CART_RANK(shockdrop%cfg%comm,coord,ranks(ngrp),ierr)    ! create cartesian ranked communicator
+      end do      
+      call MPI_Group_incl(group,ngrp,ranks,shockgen_group,ierr)           ! create an MPI group called shockgen_group
+      if ((shockdrop%cfg%jproc.eq.1).and.(shockdrop%cfg%kproc.eq.1)) then ! if we're on the bottom row of cores, we're in shockgen_group
          isInShockGenGrp=.true.
       else
          isInShockGenGrp=.false.
@@ -77,7 +79,7 @@ contains
       type(sgen) ::  shockgen
       integer    ::  n_shock,ierr
       
-      if (isInShockGenGrp)then
+      if (isInShockGenGrp)then  ! only run the shockgenerator if we're in the shockgen_group of cores 
          call general_sim_init()
 
          ! initialize the shock generator sim
@@ -97,7 +99,7 @@ contains
          saved_dt = shockgen%time%dt
          saved_dtmax = shockgen%time%dtmax
          
-         ! add MPI broadcast here to send out to MPI_COMM_WORLD group
+         ! communicate shock profile to all other cores using global communicator
          call MPI_BCAST(savedGrho_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
          call MPI_BCAST(savedGrhoE_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
          call MPI_BCAST(savedGP_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)

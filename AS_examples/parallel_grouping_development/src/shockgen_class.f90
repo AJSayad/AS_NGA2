@@ -52,8 +52,8 @@ contains
     ! Create mesh for sgen
     create_config: block
       use sgrid_class, only: cartesian,sgrid
-      use param,       only: param_read,param_exists
-      use parallel,    only: amRoot,group
+      use param,       only: param_read
+      use parallel,    only: amRoot
       type(sgrid) :: grid
       integer, dimension(3) :: partition
       integer  :: i,j,k,nx,ny,nz
@@ -62,7 +62,8 @@ contains
       ! variables for stretching
       integer  :: nx_stretchL,nx_stretchR,ny_stretch,nz_stretch
       real(WP) :: dx_old,dx_ref,start_ref,dy_old,dy_stretch,dz_old,dz_stretch
-
+      
+      print*, "shockgen_class running."
       print*, "shockgen init subroutine: shockgen_group = ", shockgen_group
 
       ! stretching ratio
@@ -141,7 +142,7 @@ contains
       end do
             
       ! General serial grid object
-      grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='ShockGen')
+      grid=sgrid(coord=cartesian,no=1,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='ShockGen')
 
       ! Read in partition
       call param_read('Partition',partition,short='p'); partition(2) = 1; partition(3) = 1; ! manually overwrite partition in y and z directions
