@@ -13,7 +13,6 @@ module simulation
   real(WP) :: saved_dt,saved_dtmax
   integer :: n_shock
   logical :: isInShockGenGrp
-  integer, dimension(:), allocatable :: ranks
 
   ! MPI group fo shockgen simulation
   type(MPI_Group) :: shockgen_group
