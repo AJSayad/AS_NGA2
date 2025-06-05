@@ -39,8 +39,9 @@ contains
     ! initialize grid for shock droplet simulation
     call shockdrop%init_grid()
 
+    ! NOTE: This block is working in original sim.f90
     ! Create an MPI group using 1D decomposition in x
-    create_shockgen_group: block
+    create_shockgen_group: block 
       use parallel, only: group,comm
       use mpi_f08,  only: MPI_Group_incl!,MPI_CART_RANK
       integer, dimension(:), allocatable :: ranks
@@ -60,12 +61,15 @@ contains
       else
          isInShockGenGrp=.false.
       end if
-      print*, "AS sim.f90 create_shockgen_group"
-      print*, "shockdrop rank: ", shockdrop%cfg%rank
       if(isInShockGenGrp)then
-         print*, "I'm in shockgengrp."
+         print*, "Processor rank: ", shockdrop%cfg%rank
+         print*, "Processor rank coord (x,y): ", shockdrop%cfg%iproc,shockdrop%cfg%jproc
+         print*, "I am in the shock gen group."
+      else
+         print*, "Processor rank: ", shockdrop%cfg%rank
+         print*, "Processor rank coord (x,y): ", shockdrop%cfg%iproc,shockdrop%cfg%jproc
+         print*, "I am NOT in the shock gen group."
       end if
-      print*, "shockgengroup coord", coord         
       
     end block create_shockgen_group
   end subroutine general_sim_init
