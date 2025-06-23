@@ -1,0 +1,67 @@
+# Parallelization
+Partition : 2 2 2
+I/O partition: 1 1 1
+
+# Mesh definition
+Lx :	0.00748       # end of the refined region
+Lx ref: 0.0           # start of the refined uniform region in x direction
+nx :	100 #200
+nx stretch right: 0 #25  # number of points to add at the right of domain for stretching
+nx stretch left:  0   # number of points to add at the left of domain for stretching
+Ly :	0.00748       # total uniform region height 
+ny :	100 #200           # number of cells in the uniform region
+ny stretch : 0 #50       # number of cells to add for stretching (i.e. ny_total = 2*ny_stretch + ny)
+Lz : 	0.00748 #3.74e-6 #0.00748 #3.74e-6
+nz:     100             # number of cells in the uniform region
+nz stretch : 0        # number of cells to add for stretching (i.e. nz_total = 2*nz_stretch + nz) 
+
+# Flow setup
+Droplet diameter :   0.00187
+Droplet location :   0.00374 0 0
+Shock location :     0.0026 #0.00374 #0.0026 #0.5*d0
+Mach number of shock :   5.298
+Pre-shock density :   1.17
+Pre-shock pressure :  1.01e5
+
+# init sim setup
+#Profile extraction flag: false
+n_shock :  3   # shock profile points (left and right of center)
+Single phase shock location: 0.001     # singlephase simulation starting shock location
+Final shock location :       0.003     # singlephase simulation final shock location
+
+# Fluid properties
+Liquid dynamic viscosity :    0
+Gas dynamic viscosity :       0
+Liquid thermal conductivity : 0
+Gas thermal conductivity :    0
+Gas specific heat (constant vol): 717.6
+Liquid gamma :	      	     6.12
+Liquid Pref :		     3.43e8
+Liquid specific heat (constant vol): 4130.2
+Gas gamma : 		      1.3
+Liquid density :              1000
+Surface tension coefficient : 0.0
+
+# Time integration
+Max timestep size : 2e-8
+Max cfl number :    0.8
+Max time :     	    3e-5 
+Max steps :	    100000000
+
+# Pressure solver
+Pressure tolerance : 1e-6
+Pressure iteration : 100
+
+# Implicit velocity solver
+Implicit tolerance : 1e-6
+Implicit iteration : 100
+
+# Ensight output
+Ensight output period :      5e-8
+Ensight smesh output period: 1e-8
+
+# Restart
+Restart output period : 1e-7
+#Restart from : 8.00000E-08
+
+# add post processing into sim?
