@@ -35,24 +35,29 @@ contains
     if(.not.restarted)then
        call general_sim_init    ! initialize grid for shockdrop, create shock gen group and initialize
        call run_shock_generator ! run shock gen class
-       
-       ! initialize shock droplet sim
-       ! note: restart logic is still built into shockdrop%init subroutine
-       call shockdrop%init(saved_dt,saved_dtmax)
-       
-       shock_profile: block
-         integer :: i,n_shock,shock_index,ierr
-         real(WP) :: tol,Lx,dx,shock_loc
-         call param_read('Lx',Lx)
-         call param_read('n_shock',n_shock)
-         dx = Lx/shockdrop%cfg%nx
-         tol = dx/2
-         
-         ! 1. first loop through each proc subdomain and find physical shock locations
-         ! 2. Loop again through each proc subdomain and determine which points need to be updated (based on physical values)
-         shock_loc = -10.0_WP ! initialize to non-physical value
-         shock_index = -10    ! initialize to a non-physical value
-         ! find shock index
+    end if
+    
+    ! initialize shock droplet sim
+    ! note: restart logic is still built into shockdrop%init subroutine
+    call shockdrop%init(saved_dt,saved_dtmax)
+
+    shock_profile: block
+      integer :: i,n_shock,shock_index,ierr
+      real(WP) :: tol,Lx,dx,shock_loc
+      call param_read('Lx',Lx)
+      call param_read('n_shock',n_shock)
+      dx = Lx/shockdrop%cfg%nx
+      tol = dx/2
+
+      !print*, "sim init n_shock: ", n_shock
+      print*, "simulation init, just before reading shock profile"
+      print*, "savedGrho_profile: ", savedGrho_profile
+      ! 1. first loop through each proc subdomain and find physical shock locations
+      ! 2. Loop again through each proc subdomain and determine which points need to be updated (based on physical values)
+      shock_loc = -10.0_WP ! initialize to non-physical value
+      shock_index = -10    ! initialize to a non-physical value
+      ! find shock index
+      if (.not.restarted)then
          ! every processor looks for the shock in their subdomain
          do i=shockdrop%cfg%imin,shockdrop%cfg%imax
             if ((shockdrop%cfg%xm(i).lt.(shockdrop%xshock+tol)).and.(shockdrop%cfg%xm(i).gt.(shockdrop%xshock-tol))) then
@@ -60,13 +65,14 @@ contains
                shock_loc = shockdrop%cfg%xm(shock_index) ! store location of shock corresponding to index
                !print*, "sim.f90: Rank: ", shockdrop%cfg%rank
                !print*, "sim.f90: The shock has been found at index: ", i
-               !print*, "sim.f90: The found shock location (cell center) is: ", shock_loc
+               print*, "sim.f90: The found shock location (cell center) is: ", shock_loc
             end if
          end do
-         
+
          do i=shockdrop%cfg%imino_,shockdrop%cfg%imaxo_
             !if ((shockdrop%cfg%xm(i).ge.(shock_loc-n_shock*dx).and.(shockdrop%cfg%xm(i).le.(shock_loc+n_shock*dx))))then
             if ((i.ge.shock_index-n_shock).and.(i.le.shock_index+n_shock))then
+               print*, "savedGrho_profile: ", savedGrho_profile(i+n_shock-shock_index+1)
                shockdrop%fs%Grho(i,:,:)  = savedGrho_profile(i+n_shock-shock_index+1)
                shockdrop%fs%GP(i,:,:)    = savedGP_profile(i+n_shock-shock_index+1)
                shockdrop%fs%GrhoE(i,:,:) = savedGrhoE_profile(i+n_shock-shock_index+1)
@@ -75,12 +81,11 @@ contains
          end do
          call shockdrop%update_mixture_variables() ! update mixture density, bulkmod, and momenta
          call shockdrop%writeIC() ! write IC
-       end block shock_profile
-    else ! this is where we run the restart
-       call shockdrop%init_grid() ! initialize grid for shock droplet simulation
-       call shockdrop%restart()   ! restarts the simulation
-       call shockdrop%writeIC()   ! write conditions at time of restart
-    end if
+      else
+         call shockdrop%writeIC()
+      end if
+      
+    end block shock_profile
   end subroutine simulation_init
   
   !> run full simulation
@@ -95,6 +100,8 @@ contains
   subroutine simulation_final
     ! deallocate work arrays
     deallocate(savedGrho_profile);deallocate(savedGP_profile);deallocate(savedGrhoE_profile);deallocate(savedUi_profile)
+    !deallocate(saved_dt);deallocate(saved_dtmax)
+    
     call shockdrop%final()
   end subroutine simulation_final
   
@@ -110,18 +117,19 @@ contains
     ! initialize grid for shock droplet simulation
     call shockdrop%init_grid()
 
+    ! NOTE: This block is working in original sim.f90
     ! Create an MPI group using 1D decomposition in x
     create_shockgen_group: block 
       use parallel, only: group,comm
-      use mpi_f08,  only: MPI_Group_incl
+      use mpi_f08,  only: MPI_Group_incl!,MPI_CART_RANK
       integer, dimension(:), allocatable :: ranks
       integer, dimension(3) :: coord
       integer :: n,ngrp,ierr,ncores
       ngrp=shockdrop%cfg%npx ! keep domain decomp in x only
       allocate(ranks(ngrp))  ! allocate ranks
-      ngrp=0                 ! set ngrp to zero (used as a counter in following loop)
+      ngrp=0
       do ncores=1,shockdrop%cfg%npx ! loop over cores in x direction
-         ngrp=ngrp+1                ! count +1
+         ngrp=ngrp+1
          coord=[ncores-1,0,0]       ! assign coordinates 
          call MPI_CART_RANK(shockdrop%cfg%comm,coord,ranks(ngrp),ierr)    ! create cartesian ranked communicator
       end do      
@@ -131,16 +139,26 @@ contains
       else
          isInShockGenGrp=.false.
       end if
+      !if(isInShockGenGrp)then
+      !   print*, "Processor rank: ", shockdrop%cfg%rank
+      !   print*, "Processor rank coord (x,y): ", shockdrop%cfg%iproc,shockdrop%cfg%jproc
+      !   print*, "I am in the shock gen group."
+      !else
+      !   print*, "Processor rank: ", shockdrop%cfg%rank
+      !   print*, "Processor rank coord (x,y): ", shockdrop%cfg%iproc,shockdrop%cfg%jproc
+      !   print*, "I am NOT in the shock gen group."
+      !end if
+      
     end block create_shockgen_group
   end subroutine general_sim_init
 
-  !> run the shock generator sim (only run on the shockGenGrp cores)
+  !> only run the shock generator for the shockgengroup procs
   subroutine run_shock_generator
     shock_generator: block
       use mpi_f08, only: MPI_BCAST,MPI_DOUBLE_PRECISION,MPI_COMM_WORLD
+      !> shock generator simulation
       type(sgen) ::  shockgen
       integer    ::  n_shock,ierr
-      
       call param_read('n_shock',n_shock)
       if (isInShockGenGrp)then  ! only run the shockgenerator if we're in the shockgen_group of cores
          ! initialize the shock generator sim
@@ -159,15 +177,35 @@ contains
          savedUi_profile    = shockgen%Ui_profile
          saved_dt    = shockgen%time%dt
          saved_dtmax = shockgen%time%dtmax
+         
+         ! ! communicate shock profile to all other cores using global communicator
+         ! call MPI_BCAST(savedGrho_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+         ! call MPI_BCAST(savedGrhoE_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+         ! call MPI_BCAST(savedGP_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+         ! call MPI_BCAST(savedUi_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+         ! call MPI_BCAST(saved_dt,1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+         ! call MPI_BCAST(saved_dtmax,1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+
+         ! print*, "+++++++ simulation.f90 ++++++++"         
+         ! print*, "shockgen%Grho_profile: ", shockgen%Grho_profile
+         ! print*, "savedGrho_profile: ", savedGrho_profile
+         
       end if
 
-      ! communicate shock profile to all other cores using global communicator
+      !print*, "+++++++ TEST simulation.f90 ++++++++"
+      !print*, "size savedGrho_profile: ", size(savedGrho_profile)
+
       call MPI_BCAST(savedGrho_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
       call MPI_BCAST(savedGrhoE_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
       call MPI_BCAST(savedGP_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
       call MPI_BCAST(savedUi_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
       call MPI_BCAST(saved_dt,1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
       call MPI_BCAST(saved_dtmax,1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+      
+      !print*, "+++++++ simulation.f90 ++++++++"         
+      !print*, "shockgen%Grho_profile: ", shockgen%Grho_profile
+      !print*, "savedGrho_profile: ", savedGrho_profile
+      
     end block shock_generator
 
   end subroutine run_shock_generator

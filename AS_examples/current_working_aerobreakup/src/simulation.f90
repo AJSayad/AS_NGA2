@@ -35,26 +35,24 @@ contains
     if(.not.restarted)then
        call general_sim_init    ! initialize grid for shockdrop, create shock gen group and initialize
        call run_shock_generator ! run shock gen class
-    end if
-    
-    ! initialize shock droplet sim
-    ! note: restart logic is still built into shockdrop%init subroutine
-    call shockdrop%init(saved_dt,saved_dtmax)
-
-    shock_profile: block
-      integer :: i,n_shock,shock_index,ierr
-      real(WP) :: tol,Lx,dx,shock_loc
-      call param_read('Lx',Lx)
-      call param_read('n_shock',n_shock)
-      dx = Lx/shockdrop%cfg%nx
-      tol = dx/2
-
-      ! 1. first loop through each proc subdomain and find physical shock locations
-      ! 2. Loop again through each proc subdomain and determine which points need to be updated (based on physical values)
-      shock_loc = -10.0_WP ! initialize to non-physical value
-      shock_index = -10    ! initialize to a non-physical value
-      ! find shock index
-      if (.not.restarted)then
+       
+       ! initialize shock droplet sim
+       ! note: restart logic is still built into shockdrop%init subroutine
+       call shockdrop%init(saved_dt,saved_dtmax)
+       
+       shock_profile: block
+         integer :: i,n_shock,shock_index,ierr
+         real(WP) :: tol,Lx,dx,shock_loc
+         call param_read('Lx',Lx)
+         call param_read('n_shock',n_shock)
+         dx = Lx/shockdrop%cfg%nx
+         tol = dx/2
+         
+         ! 1. first loop through each proc subdomain and find physical shock locations
+         ! 2. Loop again through each proc subdomain and determine which points need to be updated (based on physical values)
+         shock_loc = -10.0_WP ! initialize to non-physical value
+         shock_index = -10    ! initialize to a non-physical value
+         ! find shock index
          ! every processor looks for the shock in their subdomain
          do i=shockdrop%cfg%imin,shockdrop%cfg%imax
             if ((shockdrop%cfg%xm(i).lt.(shockdrop%xshock+tol)).and.(shockdrop%cfg%xm(i).gt.(shockdrop%xshock-tol))) then
@@ -65,7 +63,7 @@ contains
                !print*, "sim.f90: The found shock location (cell center) is: ", shock_loc
             end if
          end do
-
+         
          do i=shockdrop%cfg%imino_,shockdrop%cfg%imaxo_
             !if ((shockdrop%cfg%xm(i).ge.(shock_loc-n_shock*dx).and.(shockdrop%cfg%xm(i).le.(shock_loc+n_shock*dx))))then
             if ((i.ge.shock_index-n_shock).and.(i.le.shock_index+n_shock))then
@@ -77,11 +75,14 @@ contains
          end do
          call shockdrop%update_mixture_variables() ! update mixture density, bulkmod, and momenta
          call shockdrop%writeIC() ! write IC
-      else
-         call shockdrop%writeIC()
-      end if
-      
-    end block shock_profile
+         ! deallocate work arrays
+         deallocate(savedGrho_profile);deallocate(savedGP_profile);deallocate(savedGrhoE_profile);deallocate(savedUi_profile)
+       end block shock_profile
+    else ! this is where we run the restart
+       call shockdrop%init_grid() ! initialize grid for shock droplet simulation
+       call shockdrop%restart()   ! restarts the simulation
+       call shockdrop%writeIC()   ! write conditions at time of restart
+    end if
   end subroutine simulation_init
   
   !> run full simulation
@@ -94,8 +95,6 @@ contains
   
   !> finalize simulation
   subroutine simulation_final
-    ! deallocate work arrays
-    deallocate(savedGrho_profile);deallocate(savedGP_profile);deallocate(savedGrhoE_profile);deallocate(savedUi_profile)
     call shockdrop%final()
   end subroutine simulation_final
   
