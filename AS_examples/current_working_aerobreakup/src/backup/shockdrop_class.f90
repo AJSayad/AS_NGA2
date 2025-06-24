@@ -304,6 +304,8 @@ contains
       real(WP), dimension(:,:,:), allocatable :: P11,P12,P13,P14 
       real(WP), dimension(:,:,:), allocatable :: P21,P22,P23,P24
 
+      print*, "shockdrop start VOF solver setup"
+      
       ! Create a VOF solver with PLICnet reconstruction
       call this%vf%initialize(cfg=this%cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
       
@@ -434,12 +436,14 @@ contains
       end if
       ! apply boundary conditions on VOF
       call this%vf%apply_bcond(this%time%t,this%time%dt)
+      print*, "shockdrop end VOF solver setup"
     end block create_VOF_solver
     
     !> create two-phase compressible flow solver
     create_flow_solver: block
       use hypre_str_class, only: pcg_pfmg   ! preconditioned conjugate gradient method for pressure and velocity
       use param,           only: param_read
+      print*, "shockdrop start flow solver setup"
       ! Create flow solver
       this%fs=mast(cfg=this%cfg,name='Two-phase All-Mach',vf=this%vf)
       ! Configure pressure solver
@@ -453,6 +457,7 @@ contains
       call param_read('Implicit tolerance',this%vs%rcvg)
       ! Setup the solver
       call this%fs%setup(pressure_solver=this%ps,implicit_solver=this%vs)
+      print*, "shockdrop end flow solver setup"
     end block create_flow_solver
     
     !> set initial and boundary  conditions
@@ -468,6 +473,8 @@ contains
       real(WP) :: vshock,relshockvel,Lx,dx
       real(WP) :: Grho0, GP0, Grho1, GP1, ST, Ma1, Ma, Lrho0, LP0, Mas
       type(bcond), pointer :: mybc
+      
+      print*, "shockdrop start IC setup"
       
       ! Create material model class
       this%matmod=matm(cfg=this%cfg,name='Liquid-gas models')
@@ -569,7 +576,11 @@ contains
          call this%fs%add_bcond(name='outflow',type=clipped_neumann,locator=right_of_domain,face='x',dir=+1)
          call this%fs%add_bcond(name='outflow',type=clipped_neumann,locator=bot_of_domain,face='y',dir=-1)
          call this%fs%add_bcond(name='outflow',type=clipped_neumann,locator=top_of_domain,face='y',dir=+1)
+         ! AS 6/23/2025 when I comment out the BC in z dir, the sim starts running again, when these are here, we get a segmentation fault
+         ! When I change the z BCs to neumann instead of clipped_neuman, the sim starts running again
          if (this%cfg%nz.gt.1)then
+            !call this%fs%add_bcond(name='outflow',type=neumann,locator=bck_of_domain,face='z',dir=-1)
+            !call this%fs%add_bcond(name='outflow',type=neumann,locator=fnt_of_domain,face='z',dir=+1)
             call this%fs%add_bcond(name='outflow',type=clipped_neumann,locator=bck_of_domain,face='z',dir=-1)
             call this%fs%add_bcond(name='outflow',type=clipped_neumann,locator=fnt_of_domain,face='z',dir=+1)
          end if
@@ -577,6 +588,8 @@ contains
          ! Calculate face velocities
          call this%fs%interp_vel_basic(this%vf,this%fs%Ui,this%fs%Vi,this%fs%Wi,this%fs%U,this%fs%V,this%fs%W)
 
+         print*, "L592"
+         
          ! Apply face BC - inflow
          call this%fs%get_bcond('inflow',mybc)
          do n=1,mybc%itr%n_
@@ -584,26 +597,37 @@ contains
             this%fs%U(i,j,k)=vshock
          end do
 
+         print*, "L601"
+         
          ! Apply face BC - outflow
          bc_scope = 'velocity'
          call this%fs%apply_bcond(this%time%dt,bc_scope)
 
+         print*, "L607"
+         
          ! Calculate mixture density and momenta
          this%fs%RHO   = (1.0_WP-this%vf%VF)*this%fs%Grho  + this%vf%VF*this%fs%Lrho
          this%fs%rhoUi = this%fs%RHO*this%fs%Ui; this%fs%rhoVi = this%fs%RHO*this%fs%Vi; this%fs%rhoWi = this%fs%RHO*this%fs%Wi
+
+         print*, "L613"
          
          ! set pressure relax model
          this%relax_model = mech_egy_mech_hhz
          ! Perform initial pressure relax
          call this%fs%pressure_relax(this%vf,this%matmod,this%relax_model)
 
+         print*, "L620"
+         
          ! Calculate initial phase and bulk moduli
          call this%fs%init_phase_bulkmod(this%vf,this%matmod)
          call this%fs%reinit_phase_pressure(this%vf,this%matmod)
          call this%fs%harmonize_advpressure_bulkmod(this%vf,this%matmod)
 
+         print*, "L627"
+         
          ! Set initial pressure to harmonized field based on internal energy
          this%fs%P = this%fs%PA
+         print*, "shockdrop end IC setup"
          
       else ! we are restarting
          ! Read data
@@ -1131,7 +1155,7 @@ contains
     end if
   end subroutine step
   
-  !> Finalize shock droplet simulation
+     !> Finalize shock droplet simulation
   subroutine final(this)
     implicit none
     class(sdrop), intent(inout) :: this

@@ -520,7 +520,7 @@ contains
     implicit none
     class (sgen), intent(inout) :: this
     type(MPI_Group), intent(in) :: shockgen_group
-    integer :: i,j,shock_index,n_shock,nx,nx_stretchL,nx_stretchR,nx_total
+    integer :: i,j,shock_index,n_shock,nx,nx_stretchL,nx_stretchR,nx_total,ny_center,nz_center
     real(WP) :: final_xshock, delta, start_ref,Lx
     real(WP) :: tol ! tolerance for finding final shock location in singlephase
     real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, GP_profile, Ui_profile ! shock profile arrays
@@ -537,6 +537,14 @@ contains
     delta = 2*this%cfg%dx(1)*n_shock !shock thickness
     tol = (Lx - start_ref)/nx ! set the tolerance to the mesh spacing in the uniform region
     shock_index = 0;
+
+    ! define centerline index
+    ny_center = this%cfg%ny/2
+    if (this%cfg%nz.gt.1)then
+       nz_center = this%cfg%nz/2
+    else
+       nz_center = 1
+    end if
 
     ! allocate shock profile arrays
     allocate(this%Grho_profile(2*n_shock+1));allocate(this%GrhoE_profile(2*n_shock+1));allocate(this%Ui_profile(2*n_shock+1));allocate(this%GP_profile(2*n_shock+1))
@@ -556,10 +564,10 @@ contains
 
     ! if our proc is contains the centerline, store local centerline variables on each processor
     if (((this%cfg%y(this%cfg%jmin_).le.0.0_WP).and.(this%cfg%y(this%cfg%jmax_).ge.0.0_WP)).and.(this%cfg%z(this%cfg%kmin_).le.0.0_WP).and.(this%cfg%z(this%cfg%kmax_).ge.0.0_WP))then
-       Grho_center(this%cfg%imin_:this%cfg%imax_)  = this%fs%Grho(this%cfg%imin_:this%cfg%imax_,1,1)
-       GrhoE_center(this%cfg%imin_:this%cfg%imax_) = this%fs%GrhoE(this%cfg%imin_:this%cfg%imax_,1,1)
-       GP_center(this%cfg%imin_:this%cfg%imax_)    = this%fs%GP(this%cfg%imin_:this%cfg%imax_,1,1)
-       Ui_center(this%cfg%imin_:this%cfg%imax_)    = this%fs%Ui(this%cfg%imin_:this%cfg%imax_,1,1)
+       Grho_center(this%cfg%imin_:this%cfg%imax_)  = this%fs%Grho(this%cfg%imin_:this%cfg%imax_,ny_center,nz_center)
+       GrhoE_center(this%cfg%imin_:this%cfg%imax_) = this%fs%GrhoE(this%cfg%imin_:this%cfg%imax_,ny_center,nz_center)
+       GP_center(this%cfg%imin_:this%cfg%imax_)    = this%fs%GP(this%cfg%imin_:this%cfg%imax_,ny_center,nz_center)
+       Ui_center(this%cfg%imin_:this%cfg%imax_)    = this%fs%Ui(this%cfg%imin_:this%cfg%imax_,ny_center,nz_center)
     end if
 
     ! use mpi_allreduce sum to 'concatenate' arrays
@@ -568,7 +576,8 @@ contains
     call MPI_ALLREDUCE(GP_center,GP_global,this%cfg%imax,MPI_DOUBLE_PRECISION,MPI_SUM,this%cfg%comm,ierr)
     call MPI_ALLREDUCE(Ui_center,Ui_global,this%cfg%imax,MPI_DOUBLE_PRECISION,MPI_SUM,this%cfg%comm,ierr)
     
-    ! AS extract shock profile for every proc
+    ! AS extract shock profile for every proc (this used to be only on the root proc)
+    !if(amRoot)then
     shock_index = 0 ! initialize shock index to zero
     do i=this%cfg%imin,this%cfg%imax
        !print*, "i index: ", i
@@ -579,12 +588,16 @@ contains
        end if
     end do
     
-    do i=shock_index-n_shock,shock_index+n_shock ! saving 2*n_shock+1 points
+    do i=shock_index-n_shock,shock_index+n_shock ! this is now writing 2*n_shock points
        this%Grho_profile(i-shock_index+n_shock+1) = Grho_global(i)
        this%GrhoE_profile(i-shock_index+n_shock+1) = GrhoE_global(i)
        this%GP_profile(i-shock_index+n_shock+1) = GP_global(i)
        this%Ui_profile(i-shock_index+n_shock+1) = Ui_global(i)
     end do
+    print*, "++++++++ shockgen_class.f90 ++++++++"
+    print*, "shock gen rank: ", this%cfg%rank
+    print*, "this%Grho_profile: ", this%Grho_profile
+    !end if
 
   end subroutine final
   
