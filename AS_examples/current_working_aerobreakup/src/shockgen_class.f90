@@ -34,6 +34,8 @@ module shockgen_class
      !> Fluid parameters
      real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, Ui_profile, GP_profile
      integer            :: relax_model
+     integer            :: nx,nx_stretch
+     real(WP)           :: Lx
    contains
      procedure :: init  !> initialize sgen simulation
      procedure :: step  !> advance sgen simulation by one timestep
@@ -54,62 +56,70 @@ contains
       use sgrid_class, only: cartesian,sgrid
       use param,       only: param_read
       use parallel,    only: amRoot
+      use messager,    only: die
       type(sgrid) :: grid
       integer, dimension(3) :: partition
-      integer  :: i,j,k,nx,ny,nz
-      real(WP) :: Lx,dx,Ly,dy,Lz,dz,alpha
+      integer  :: i,nx
+      real(WP) :: Lx,dx
       real(WP), dimension(:), allocatable :: x,y,z
-      ! variables for stretching
-      integer  :: nx_stretchL,nx_stretchR
-      real(WP) :: dx_old,dx_ref,start_ref
-      
-      ! stretching ratio
-      alpha = 1.03_WP
-      ! Read in grid definition
-      call param_read('Lx',Lx); call param_read('Lx ref', start_ref, default=0.0_WP);
-      call param_read('nx',nx); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
-      dx = Lx/nx; dx_ref = (Lx - start_ref)/real(nx,WP)
-      ! set ny and nz to 1
-      ny = 1; nz = 1 
-      ! set Ly and Lz to dx
-      Ly = dx; Lz = dx
-      allocate(x(nx+nx_stretchL+nx_stretchR+1));allocate(y(ny+1));allocate(z(nz+1));
-      
-      !uniform mesh x
-      do i=nx_stretchL+1,nx+nx_stretchL+1
-         x(i) = start_ref + real(i-1-nx_stretchL,WP)*dx_ref
-      end do
-      
-      ! stretch left of domain
-      do i=nx_stretchL,1,-1
-         dx_old = abs(x(i+2) - x(i+1))
-         x(i) = x(i+1) - dx_old*alpha
-      end do
-      
-      ! stretch right of domain
-      do i=nx+nx_stretchL+2,nx+nx_stretchL+nx_stretchR+1
-         dx_old = x(i-1)-x(i-2)
-         x(i) = x(i-1)+dx_old*alpha
-      end do
+      real(WP) :: ddrop,CPD,D0X,D0X_stretch
+      real(WP) :: Lx_stretch,L_test,dx_stretch,dx_test,alpha
+      integer  :: nx_stretch,nx_stretch_max
 
-      ! y mesh, 1D
-      y(1) = 0.0_WP; y(2) = Ly
-      ! z mesh, 1D
-      z(1) = 0.0_WP; z(2) = Lz
+      call param_read('Droplet diameter',ddrop)
+      call param_read('Cells per diameter',CPD)
+      call param_read('D0X',D0X)
+      call param_read('D0X stretch',D0X_stretch)
+      ! shock generator is intended as a 1D case, we set all variables regarding y and z later
+      
+      Lx = D0X*ddrop                 ! compute domain length in x
+      Lx_stretch = D0X_stretch*ddrop ! compute stretching length in x
+      nx = ceiling((CPD*Lx)/ddrop)   ! compute number of uniform cells in x direction
+      dx = Lx/nx                     ! compute uniform mesh spacing in x direciton
+      alpha = 1.03_WP                ! stretching ratio
 
+      !> compute number of cells for stretching in x direction (geometric series)
+      nx_stretch_max = 1000                   ! max allowed cells for stretching
+      nx_stretch = 1                          ! initialize number of cells for streching
+      dx_test = dx                            ! initialize mesh spacing for testing stretch length
+      L_test = 0.0_WP                         ! initailize stretching test length
+      do while (nx_stretch.lt.nx_stretch_max) 
+         dx_test = dx*(alpha**nx_stretch)     ! compute testing dx
+         L_test = L_test + dx_test            ! add spacing to Lx
+         nx_stretch = nx_stretch + 1          ! add one to stretching cells
+         if (L_test.ge.Lx_stretch)then        ! if L_test is greater than or equal Lx_stretch, exit the loop
+            exit                              ! exit the loop
+         end if
+      end do
+      allocate(x(nx+nx_stretch+1))            ! allocate x array (cell edges)
+      !> generate uniform mesh in x
+      do i=1,nx+1
+         x(i) = real(i-1,WP)*dx
+      end do
+      !> generate stretched mesh in x
+      do i=nx+2,nx+nx_stretch+1
+         dx_stretch = alpha*(x(i-1)-x(i-2))
+         x(i) = x(i-1) + dx_stretch
+      end do
+      !> 1D mesh, set y and z
+      allocate(y(2)); allocate(z(2))
+      y(1) = 0.0_WP; y(2) = dx
+      z(1) = 0.0_WP; z(2) = dx
+
+      this%Lx = Lx; this%nx = nx; this%nx_stretch = nx_stretch ! make these values available to the other subroutines 
+      
       ! General serial grid object
       grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='ShockGen')
       ! Read in partition
       call param_read('Partition',partition,short='p'); partition(2) = 1; partition(3) = 1; ! manually overwrite partition in y and z directions
       ! Create partitioned grid
       this%cfg=config(grp=shockgen_group,decomp=partition,grid=grid)
-
     end block create_config
     
     initialize_timetracker: block
       use param, only: param_read
 
-      real(WP) :: start_xshock,final_xshock,vshock,relshockvel ! how far the shock will travel
+      real(WP) :: ddrop,start_xshock,final_xshock,vshock,relshockvel ! how far the shock will travel
       real(WP) :: gamm_g,Ma,Grho0,GP0,Grho1,GP1,Ma1            ! gas properties
       
       this%time=timetracker(amRoot=this%cfg%amRoot)
@@ -117,9 +127,11 @@ contains
       call param_read('Max cfl number',this%time%cflmax)
 
       ! use shock values to calculate final simulation time
-      call param_read('Single phase shock location',start_xshock)
+      !call param_read('Droplet diameter',ddrop)
+      call param_read('Shock gen starting shock location',start_xshock)
+      call param_read('Shock gen ending shock location',final_xshock)
+      
       call param_read('Gas gamma',gamm_g)
-      call param_read('Final shock location',final_xshock) !final singlephase shock location
       call param_read('Pre-shock density',Grho0,default=1.204_WP)
       call param_read('Pre-shock pressure',GP0,default=1.01325e5_WP)
       call param_read('Mach number of shock',Ma,default=1.47_WP)
@@ -218,16 +230,8 @@ contains
       type(bcond), pointer :: mybc
       
       ! variables for shock generation
-      integer  :: n_shock,shock_index
-      real(WP) :: start_xshock,final_xshock,delta,dx,tol,shock_loc
+      real(WP) :: start_xshock,final_xshock
 
-      ! set up for shock profile
-      call param_read('n_shock',n_shock) ! number of points to capture shock profile
-      call param_read('Lx',Lx); call param_read('nx',nx)
-      dx = Lx/nx ! mesh spacing in uniform region
-      tol = dx/2 ! set tolerance for reading in shock profile
-      delta = 2*dx*n_shock ! shock thickness
-      
       ! Create material model class
       this%matmod=matm(cfg=this%cfg,name='Liquid-gas models')
       
@@ -263,8 +267,8 @@ contains
       call param_read('Pre-shock density',Grho0,default=1.204_WP)
       call param_read('Pre-shock pressure',GP0,default=1.01325e5_WP)
       call param_read('Mach number of shock',Ma,default=1.47_WP)
-      call param_read('Single phase shock location',start_xshock) 
-      call param_read('Final shock location',final_xshock) 
+      call param_read('Shock gen starting shock location',start_xshock)
+      call param_read('Shock gen ending shock location',final_xshock)
 
       !use shock relations to get post shock numbers
       GP1 = GP0 * (2.0_WP*gamm_g*Ma**2 - (gamm_g-1.0_WP)) / (gamm_g+1.0_WP)
@@ -282,9 +286,6 @@ contains
          print*, 'Pre-shock:  Density',Grho0,'Pressure',GP0
          print*, 'Post-shock: Density',Grho1,'Pressure',GP1,'Gas Velocity',vshock
          print*, 'Shock velocity', relshockvel
-         print*, "Total shock profile points: ", 2*n_shock
-         print*, "Shock thickness: ", delta
-         print*, "Tolerance for finding shock center: ", tol
          print*, "=============================================="
       end if
 
@@ -527,15 +528,12 @@ contains
     real(WP), dimension(:),  allocatable :: Grho_center, GrhoE_center, GP_center, Ui_center,Grho_global,GrhoE_global,GP_global,Ui_global    ! centerline arrays
     integer :: ierr
 
-    call param_read('nx',nx);
-    call param_read('Lx',Lx);  call param_read('Lx ref',start_ref);
-    call param_read('n_shock',n_shock); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
-    call param_read('Final shock location',final_xshock)
-    call param_read('Lx ref', start_ref, default=0.0_WP);
+    call param_read('n_shock',n_shock)
+    call param_read('Shock gen ending shock location',final_xshock)
 
-    nx_total = nx + nx_stretchR + nx_stretchL ! total number of cells in x
+    nx_total = this%nx + this%nx_stretch ! total number of cells in x
     delta = 2*this%cfg%dx(1)*n_shock !shock thickness
-    tol = (Lx - start_ref)/nx ! set the tolerance to the mesh spacing in the uniform region
+    tol = this%Lx/this%nx ! set the tolerance to the mesh spacing in the uniform region
     shock_index = 0;
 
     ! allocate shock profile arrays

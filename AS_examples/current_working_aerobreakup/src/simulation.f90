@@ -42,10 +42,9 @@ contains
        
        shock_profile: block
          integer :: i,n_shock,shock_index,ierr
-         real(WP) :: tol,Lx,dx,shock_loc
-         call param_read('Lx',Lx)
+         real(WP) :: tol,dx,shock_loc
          call param_read('n_shock',n_shock)
-         dx = Lx/shockdrop%cfg%nx
+         dx = shockdrop%Lx/shockdrop%cfg%nx
          tol = dx/2
          
          ! 1. first loop through each proc subdomain and find physical shock locations
@@ -63,6 +62,8 @@ contains
                !print*, "sim.f90: The found shock location (cell center) is: ", shock_loc
             end if
          end do
+
+         !print*, "savedGrho_profile: ", savedGrho_profile
          
          do i=shockdrop%cfg%imino_,shockdrop%cfg%imaxo_
             !if ((shockdrop%cfg%xm(i).ge.(shock_loc-n_shock*dx).and.(shockdrop%cfg%xm(i).le.(shock_loc+n_shock*dx))))then

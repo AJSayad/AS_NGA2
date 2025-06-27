@@ -42,8 +42,8 @@ module shockdrop_class
      type(monitor)      :: mfile,cflfile,cvgfile
      !> Fluid parameters
      integer            :: relax_model
-     integer            :: shock_index,n_shock
-     real(WP)           :: xshock
+     integer            :: shock_index,n_shock,nx
+     real(WP)           :: xshock,Lx
      !> Provide a pardata and an event tracker for saving restarts
      type(event)   :: save_evt
      type(pardata) :: df
@@ -90,139 +90,176 @@ contains
       use messager,    only: die
       type(sgrid) :: grid
       integer, dimension(3) :: partition
-      integer :: i,j,k,nx,ny,nz
-      real(WP) :: ddrop, dx
-      real(WP) :: Lx,Ly,Lz
+      integer  :: i,j,k,nx,ny,nz
+      real(WP) :: Lx,dx,Ly,dy,Lz,dz
       real(WP), dimension(:), allocatable :: x,y,z
-      
-      ! variables for stretching in x
-      integer ::  nx_stretchL,nx_stretchR
-      real(WP) :: dx_old,alpha,dx_ref,start_ref
-      
-      ! variables for stretching in y
-      real(WP) :: dy,dy_old,dy_stretch
-      integer ::  ny_stretch
-      
-      ! variables for stretching in z
-      real(WP) :: dz,dz_old,dz_stretch
-      integer :: nz_stretch
+      real(WP) :: ddrop,CPD,D0X,D0X_stretch,D0Y,D0Y_stretch,D0Z,D0Z_stretch
+      real(WP) :: Lx_stretch,L_test,dx_stretch,dx_test,Ly_stretch,dy_stretch,dy_test,Lz_stretch,dz_stretch,dz_test,alpha
+      integer  :: nx_stretch,nx_stretch_max,ny_stretch,ny_stretch_max,nz_stretch,nz_stretch_max
 
-      alpha=1.03_WP ! mesh stretching ratio
-      ! Read in grid definition
-      call param_read('Lx',Lx); call param_read('Lx ref', start_ref, default=0.0_WP);
-      call param_read('nx',nx); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
-      dx = Lx/nx; dx_ref = (Lx - start_ref)/real(nx,WP)
-      call param_read('Ly',Ly); call param_read('ny',ny); call param_read('ny stretch',ny_stretch);
-      call param_read('nz',nz,default=1); call param_read('nz stretch',nz_stretch)
-      if (nz.eq.1) then
-         Lz = dx
-      else
-         call param_read('Lz',Lz)
-      end if      
-      allocate(x(nx+nx_stretchL+nx_stretchR+1));allocate(y(ny+2*ny_stretch+1));allocate(z(nz+2*nz_stretch+1));
-
-      ! Read in droplet information
       call param_read('Droplet diameter',ddrop)
-      
-      !uniform mesh x
-      do i=nx_stretchL+1,nx+nx_stretchL+1
-         x(i) = start_ref + real(i-1-nx_stretchL,WP)*dx_ref
-      end do
-      
-      ! stretch left of domain
-      do i=nx_stretchL,1,-1
-         dx_old = abs(x(i+2) - x(i+1))
-         x(i) = x(i+1) - dx_old*alpha
-      end do
-      
-      ! stretch right of domain
-      do i=nx+nx_stretchL+2,nx+nx_stretchL+nx_stretchR+1
-         dx_old = x(i-1)-x(i-2)
-         x(i) = x(i-1)+dx_old*alpha
-      end do      
+      call param_read('Cells per diameter',CPD)
+      call param_read('D0X',D0X);call param_read('D0X stretch',D0X_stretch)
+      call param_read('D0Y',D0Y);call param_read('D0Y stretch',D0Y_stretch)
+      call param_read('D0Z',D0Z);call param_read('D0Z stretch',D0Z_stretch)
 
-      ! y mesh
-      do j = 1,ny+2*ny_stretch+1 !initialize y mesh array
-         y(j) = 0.0_WP
+      Lx = D0X*ddrop; Ly = D0Y*ddrop                                 ! compute domain lengths
+      Lx_stretch = D0X_stretch*ddrop; Ly_stretch = D0Y_stretch*ddrop ! compute stretching lengths
+      nx = ceiling((CPD*Lx)/ddrop); ny = ceiling((CPD*Ly)/ddrop)     ! compute number of uniform cells
+      dx = Lx/nx; dy = Ly/ny                                         ! uniform mesh spacing
+      alpha = 1.03_WP ! set stretching ratio
+
+      if (D0Z.gt.0)then ! if 3D
+         Lz = D0Z*ddrop                 ! compute domain lengths
+         Lz_stretch = D0Z_stretch*ddrop ! compute stretching lengths
+         nz = ceiling((CPD*Lz)/ddrop)   ! compute number of uniform cells
+         dz = Lz/nz                     ! uniform mesh spacing
+      else              ! if 2D
+         Lz = dx
+         Lz_stretch = 0.0_WP
+         nz = 1
+         dz = dx
+      end if
+
+      !> compute number of cells for stretching in x direction (geometric series)
+      nx_stretch_max = 1000                   ! max allowed cells for stretching
+      nx_stretch = 1                          ! initialize number of cells for streching
+      dx_test = dx                            ! initialize mesh spacing for testing stretch length
+      L_test = 0.0_WP                         ! initailize stretching test length
+      do while (nx_stretch.lt.nx_stretch_max) 
+         dx_test = dx*(alpha**nx_stretch)     ! compute testing dx
+         L_test = L_test + dx_test            ! add spacing to Lx
+         nx_stretch = nx_stretch + 1          ! add one to stretching cells
+         if (L_test.ge.Lx_stretch)then        ! if L_test is greater than or equal Lx_stretch, exit the loop
+            exit                              ! exit the loop
+         end if
       end do
-      
-      dy = Ly/ny ! define uniform grid spacing
-      y(ny/2+ny_stretch+1) = 0.0_WP !define the centerline of the domain
-      
-      !y array uniform region
-      do j = ny/2+ny_stretch+2,ny+ny_stretch+1
+      allocate(x(nx+nx_stretch+1))            ! allocate x array (cell edges)
+      !> generate uniform mesh in x (cell edges)
+      do i=1,nx+1
+         x(i) = real(i-1,WP)*dx
+      end do
+      !> generate stretched mesh in x
+      do i=nx+2,nx+nx_stretch+1
+         dx_stretch = alpha*(x(i-1)-x(i-2))
+         x(i) = x(i-1) + dx_stretch
+      end do
+
+      !> compute number of cells for stretching in y direction
+      ny_stretch_max = 1000                   ! max allowed cells for stretching
+      ny_stretch = 1                          ! initialize number of cells for streching
+      dy_test = dy                            ! initialize mesh spacing for testing stretch length
+      L_test = 0.0_WP                         ! initailize stretching test length
+      do while (ny_stretch.lt.ny_stretch_max) 
+         dy_test = dy*(alpha**ny_stretch)     ! compute testing dy
+         L_test = L_test + dy_test            ! add spacing to Ly
+         ny_stretch = ny_stretch + 1          ! add one to stretching cells
+         if (L_test.ge.Ly_stretch)then        ! if L_test is greater than or equal Ly_stretch, exit the loop
+            exit                              ! exit the loop
+         end if
+      end do
+      if (mod(2*ny_stretch+ny,2).ne.0)then    ! enforce divisibility by 0 for mirroring
+         print*, "Warning: shockdrop_class: init_grid: ny total is not divisible by 2. Adding 1 cell to ny for mirroring mesh."
+         ny = ny + 1
+      end if
+      allocate(y(ny+2*ny_stretch+1))          ! allocate y array (cell edges)
+      y(ny/2+ny_stretch+1) = 0.0_WP           ! set the centerline to zero
+      !> generate uniform mesh in y 
+      do j=ny/2+ny_stretch+2,ny+ny_stretch+1
          y(j) = y(j-1) + dy
       end do
-      
-      !stretching in y
-      do j = ny+ny_stretch+2,ny+(2*ny_stretch)+1
-         dy_old = y(j-2) - y(j-3)
-         dy_stretch = alpha*dy_old
+      !> generate stretched mesh in y
+      do j=ny+ny_stretch+2,ny+(2*ny_stretch)+1
+         dy_stretch = alpha*(y(j-1)-y(j-2))
          y(j) = y(j-1) + dy_stretch
       end do
-      
-      ! mirror y across y=0 line
-      do j = 1,ny/2+ny_stretch
+      !> mirror across y=0 centerline
+      do j=1,((ny/2)+ny_stretch)
          y(j) = -y(ny-j+(2*ny_stretch)+2)
       end do
-      
-      ! z mesh
-      dz = Lz/nz ! define uniform grid spacing
-      z(nz/2+nz_stretch+1) = 0.0_WP !define centerline
-      
-      do k = nz/2+nz_stretch+2,nz+nz_stretch+1
-         z(k) = z(k-1) + dz
-      end do
-      
-      !stretching in z
-      do k = nz+nz_stretch+2,nz+(2*nz_stretch)+1
-         dz_old = z(k-2) - z(k-3)
-         dz_stretch = alpha*dz_old
-         z(k) = z(k-1) + dz_stretch
-      end do
-      
-      ! mirror z across centerline
-      do k = 1,nz/2+nz_stretch
-         z(k) = -z(nz-k+(2*nz_stretch)+2)
-      end do
-      
-      if(amRoot)then
-         print*, "======== MESH DESCRIPTION IN x ========"
-         print*, "Uniform region length: ", Lx
-         print*, "Number of cells in the uniform region: ", nx
-         print*, "Number of cells added to left of domain: ", nx_stretchL
-         print*, "Number of cells added to right of domain: ", nx_stretchR
-         print*, "Total number of cells in domain: ", nx+nx_stretchL+nx_stretchR
-         print*, "Stretching ratio in x: ", alpha
-         print*, "Leftmost point (stretched region left): ", x(1)
-         print*, "Start of uniform region: ", start_ref
-         print*, "End of uniform region: ",x(nx+nx_stretchL+1)
-         print*, "Rightmost point (stretched region right): ", x(nx_stretchL+nx+nx_stretchR+1)
-         print*, "Aspect ratio in uniform region: ", dx/dy
-         print*, "Number of cells per droplet diameter: ", nx*(ddrop/Lx)
-         print*, "======================================="
-         print*, "======== MESH DESCRIPTION IN y ========"
-         print*, 'Uniform region height: ', Ly
-         print*, 'Stretching in y starts at: +- ', Ly/2
-         print*, 'Number of cells added to the top and to the bottom: ', ny_stretch/2
-         print*, 'Stretching ratio in y: ', alpha
-         print*, "Aspect ratio in uniform region: ", dx/dy
-         print*, "Number of cells per droplet diameter: ", ny*(ddrop/Ly)
-         print*, "========================================"
-         print*, "======== MESH DESCRIPTION IN z ========"
-         print*, 'Uniform region height: ', Lz
-         print*, 'Stretching in z starts at: +- ', Lz/2
-         print*, 'Number of cells added to the front and to the back: ', nz_stretch/2
-         print*, 'Stretching ratio in z: ', alpha
-         print*, "Aspect ratio in uniform region: ", dx/dz
-         print*, "Number of cells per droplet diameter: ", nz*(ddrop/Lz)
-         print*, "========================================"
+
+      if (D0Z.gt.0)then
+         !> compute number of cells for stretching in z direction
+         nz_stretch_max = 1000                   ! max allowed cells for stretching
+         nz_stretch = 1                          ! initialize number of cells for streching
+         dz_test = dz                            ! initialize mesh spacing for testing stretch length
+         L_test = 0.0_WP                         ! initailize stretching test length
+         do while (nz_stretch.lt.nz_stretch_max) 
+            dz_test = dz*(alpha**nz_stretch)     ! compute testing dz
+            L_test = L_test + dz_test            ! add spacing to Lz
+            nz_stretch = nz_stretch + 1          ! add one to stretching cells
+            if (L_test.ge.Lz_stretch)then        ! if L_test is greater than or equal Lz_stretch, exit the loop
+               exit                              ! exit the loop
+            end if
+         end do
+         if (mod(2*nz_stretch+nz,2).ne.0)then    ! enforce divisibilitz by 0 for mirroring
+            print*, "Warning: shockdrop_class: init_grid: nz total is not divisible by 2. Adding 1 cell to nz for mirroring mesh."
+            nz = nz + 1
+         end if
+         allocate(z(nz+2*nz_stretch+1))          ! allocate z array (cell edges)
+         z(nz/2+nz_stretch+1) = 0.0_WP           ! set the centerline to zero
+         !> generate uniform mesh in z 
+         do k=nz/2+nz_stretch+2,nz+nz_stretch+1
+            z(k) = z(k-1) + dz
+         end do
+         !> generate stretched mesh in z
+         do k=nz+nz_stretch+2,nz+(2*nz_stretch)+1
+            dz_stretch = alpha*(z(k-1)-z(k-2))
+            z(k) = z(k-1) + dz_stretch
+         end do
+         !> mirror across z=0 centerline
+         do k=1,((nz/2)+nz_stretch)
+            z(k) = -z(nz-k+(2*nz_stretch)+2)
+         end do
+      else
+         allocate(z(nz+1))
+         z(1) = -dx; z(2) = dx ! 2D mesh
+      end if
+
+      this%nx = nx; this%Lx=Lx ! make available to other subroutines
+
+      if(amRoot)then ! print off mesh and domain information
+         print*, '======== UNIFORM DOMAIN DESCRIPTION ========'
+         print*, 'Droplet diameter lengths in x: ', D0X
+         print*, 'Droplet diameter lengths in y: ', D0Y
+         if (D0Z.gt.0) then
+            print *, 'Droplet diameter lengths in z: ', D0Z
+         end if
+         print*, 'Domain length in x: ', Lx
+         print*, 'Domain height in y: ', Ly
+         if (D0Z.gt.0) then
+            print*, 'Domain depth in z: ', Lz
+         end if
+         print*, '======== STRETCHED DOMAIN DESCRIPTION ========'
+         print*, 'Droplet diameter lengths added in x: ', D0X_stretch
+         print*, 'Droplet diameter lengths added in y: ', D0Y_stretch
+         if (D0Z.gt.0) then
+            print *, 'Droplet diameter lengths added in z: ', D0Z_stretch
+         end if
+         print*, 'Length added in x: ', Lx_stretch
+         print*, 'Height added in y: ', Ly_stretch
+         if (D0Z.gt.0) then
+            print*, 'Depth added in z: ', Lz_stretch
+         end if
+         print*, '============== MESH DESCRIPTION =============='
+         print*, 'Droplet Resolution: ', CPD
+         print*, 'Uniform cells in x: ', nx
+         print*, 'Uniform cells in y: ', ny
+         print*, 'Uniform cells in z: ', nz
+         print*, 'Uniform mesh spacing in x: ', dx
+         print*, 'Uniform mesh spacing in y: ', dy
+         print*, 'Uniform mesh spacing in z: ', dz
+         print*, 'Stretched cells added in x: ', nx_stretch
+         print*, 'Stretched cells added (total) in y: ', 2*ny_stretch
+         print*, 'Stretched cells added (total) in z: ', 2*nz_stretch
+         print*, 'TOTAL CELLS IN UNIFORM REGION: ', nx*ny*nz
+         print*, 'TOTAL CELLS IN DOMAIN: ', (nx+nx_stretch)*(ny+2*ny_stretch)*(nz+2*nz_stretch)
       end if
       
       ! General serial grid object
-      if (nz.gt.1)then
+      if (D0Z.gt.0)then ! 3D
          grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.false.,name='ShockDrop')
-      else
+      else ! 2D
          grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.true.,name='ShockDrop')
       end if
       ! Read in partition
@@ -278,7 +315,7 @@ contains
 
     end block save
     
-    ! Initialize our VOF solver and field
+    !> Initialize our VOF solver and field
     create_VOF_solver: block
       use mms_geom, only: cube_refine_vol
       use vfs_class, only: VFhi,VFlo,plicnet,flux,neumann
@@ -386,7 +423,7 @@ contains
       integer :: i,j,k,n,nx
       real(WP), dimension(3) :: xyz
       real(WP) :: gamm_l,Pref_l,gamm_g,visc_l,visc_g,Pref,cv_l0,cv_g0,kappa_l,kappa_g
-      real(WP) :: vshock,relshockvel,Lx,dx
+      real(WP) :: vshock,relshockvel,dx
       real(WP) :: Grho0, GP0, Grho1, GP1, ST, Ma1, Ma, Lrho0, LP0, Mas
       type(bcond), pointer :: mybc
       
@@ -433,7 +470,7 @@ contains
       vshock = -Ma1 * sqrt(gamm_g*GP1/Grho1) + Ma*sqrt(gamm_g*GP0/Grho0)
       !velocity at which the shock moves
       relshockvel = -Grho1*vshock/(Grho0-Grho1)
-      dx = Lx/nx ! mesh spacing in uniform region
+      dx = this%Lx/this%nx ! mesh spacing in uniform region
       
       if (amRoot) then
          print*, "===== Problem Setup Description ====="
