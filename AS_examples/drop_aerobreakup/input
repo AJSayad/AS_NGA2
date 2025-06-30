@@ -1,42 +1,35 @@
 # Parallelization
-Partition : 4 5 1
+Partition : 5 4 1
 I/O partition: 1 1 1
 
-### 2D 100CPD ###
+Cells per diameter: 100 # number of cells across droplet diameter 
+D0X: 12 # droplet diameter lengths in x
+D0Y: 4  # droplet diameter lengths in y
+D0Z: 0  # droplet diameter lengths in z (set to 0 for 2D)
 
-# Mesh definition
-Lx :	0.0224 # 6*d0  #0.0112  # end of the refined region
-Lx ref: 0.0 # start of the refined uniform region in x direction
-nx :	600 #1200 #600
-nx stretch right: 75 #number of points to add at the right of domain for stretching
-nx stretch left:  0   #number of points to add at the left of domain for stretching
-Ly :	0.0056  # total uniform region height 
-ny :	150 #300 #3*d0  # number of cells in the uniform region
-ny stretch : 100 #275 # number of cells to add for stretching (i.e. ny_total = 2*ny_stretch + ny)
-Lz : 	3.74e-6
-nz:     1 # number of cells in the uniform region
-nz stretch : 0 # number of cells to add for stretching (i.e. nz_total = 2*nz_stretch + nz) 
+D0X stretch: 2 # droplet diameter lengths to stretch by in x 
+D0Y stretch: 2 # droplet diameter lengths to stretch by in y 
+D0Z stretch: 0 # droplet diameter lengths to stretch by in z
 
 # Flow setup
-Droplet diameter :   0.00187
-Droplet location :   0.0028 0 0 
-Shock location :     0.0017
+Droplet diameter :   0.00187 
+Droplet location :   0.0028  0 0 
+Shock location :     0.0017 
 Mach number of shock :   5.298
 Pre-shock density :   1.17
 Pre-shock pressure :  1.01e5
 
 # init sim setup
-#Profile extraction flag: false
 n_shock :  3   # shock profile points (left and right of center)
-Single phase shock location: 0.001     # singlephase simulation starting shock location
-Final shock location :       0.002     # singlephase simulation final shock location 
+Shock gen starting shock location: 0.00187  # number of diameter lengths the singlephase shock starts at
+Shock gen ending shock location  : 0.00561  # number of diameter lengths the singlephase shock ends at
 
 # Fluid properties
 Liquid dynamic viscosity :    0
 Gas dynamic viscosity :       0
 Liquid thermal conductivity : 0
 Gas thermal conductivity :    0
-Gas specific heat (constant vol): 717.6
+Gas specific heat (constant vol): 968.86 # calculated by cv = R_air/(gamm_g-1) from IC, R_air = 290.66 J/(kg*K)
 Liquid gamma :	      	     6.12
 Liquid Pref :		     3.43e8
 Liquid specific heat (constant vol): 4130.2
@@ -45,10 +38,10 @@ Liquid density :              1000
 Surface tension coefficient : 0.0
 
 # Time integration
-Max timestep size :          5.13e-9
+Max timestep size : 5.13e-9
 Max cfl number :    0.5
-Max time :     	  1e-4 #3e-5 
-Max steps :	  1000000000
+Max time :     	    1e-4
+Max steps :	    100000000
 
 # Pressure solver
 Pressure tolerance : 1e-6
@@ -59,9 +52,11 @@ Implicit tolerance : 1e-6
 Implicit iteration : 100
 
 # Ensight output
-Ensight output period :      5e-7 # save files every 5 microseconds 
+Ensight output period :      1e-6
 Ensight smesh output period: 1e-7
 
 # Restart
-Restart output period : 5e-6 # save every 5% of the way through
-#Restart from : 1.00009E-05
+Restart output period : 1e-5
+#Restart from : 2.50000E-06
+
+# add post processing into sim?

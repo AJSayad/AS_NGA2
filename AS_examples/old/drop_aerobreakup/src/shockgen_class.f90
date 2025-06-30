@@ -34,8 +34,6 @@ module shockgen_class
      !> Fluid parameters
      real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, Ui_profile, GP_profile
      integer            :: relax_model
-     integer            :: nx,nx_stretch
-     real(WP)           :: Lx
    contains
      procedure :: init  !> initialize sgen simulation
      procedure :: step  !> advance sgen simulation by one timestep
@@ -45,81 +43,123 @@ module shockgen_class
 contains
 
   !> Initialization of the shock generator (sgen) simulation
-  subroutine init(this,shockgen_group)
-    use mpi_f08, only: MPI_Group
+  subroutine init(this)
     implicit none
-    class(sgen), intent(inout)  :: this
-    type(MPI_Group), intent(in) :: shockgen_group
+    class(sgen), intent(inout) :: this
 
     ! Create mesh for sgen
     create_config: block
       use sgrid_class, only: cartesian,sgrid
-      use param,       only: param_read
-      use parallel,    only: amRoot
-      use messager,    only: die
+      use param,       only: param_read, param_exists
+      use parallel,    only: amRoot,group
+      !use messager,    only: die
       type(sgrid) :: grid
       integer, dimension(3) :: partition
-      integer  :: i,nx
-      real(WP) :: Lx,dx
+      integer  :: i,j,k,nx,ny,nz
+      real(WP) :: Lx,dx,Ly,dy,Lz,dz,alpha
       real(WP), dimension(:), allocatable :: x,y,z
-      real(WP) :: ddrop,CPD,D0X,D0X_stretch
-      real(WP) :: Lx_stretch,L_test,dx_stretch,dx_test,alpha
-      integer  :: nx_stretch,nx_stretch_max
 
-      call param_read('Droplet diameter',ddrop)
-      call param_read('Cells per diameter',CPD)
-      call param_read('D0X',D0X)
-      call param_read('D0X stretch',D0X_stretch)
-      ! shock generator is intended as a 1D case, we set all variables regarding y and z later
+      ! variables for stretching
+      integer  :: nx_stretchL,nx_stretchR,ny_stretch,nz_stretch
+      real(WP) :: dx_old,dx_ref,start_ref,dy_old,dy_stretch,dz_old,dz_stretch
+
+      ! stretching ratio
+      alpha = 1.03_WP
+
+      ! Read in grid definition
+      call param_read('Lx',Lx); call param_read('Lx ref', start_ref, default=0.0_WP);
+      call param_read('nx',nx); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
+      dx = Lx/nx; dx_ref = (Lx - start_ref)/real(nx,WP)
+      call param_read('Ly',Ly); call param_read('ny',ny); call param_read('ny stretch',ny_stretch);
+      call param_read('nz',nz,default=1); call param_read('nz stretch',nz_stretch)
+      if (nz.eq.1) then
+         Lz = dx
+      else
+         call param_read('Lz',Lz)
+      end if      
+      allocate(x(nx+nx_stretchL+nx_stretchR+1));allocate(y(ny+2*ny_stretch+1));allocate(z(nz+2*nz_stretch+1));
+
+      !uniform mesh x
+      do i=nx_stretchL+1,nx+nx_stretchL+1
+         x(i) = start_ref + real(i-1-nx_stretchL,WP)*dx_ref
+      end do
       
-      Lx = D0X*ddrop                 ! compute domain length in x
-      Lx_stretch = D0X_stretch*ddrop ! compute stretching length in x
-      nx = ceiling((CPD*Lx)/ddrop)   ! compute number of uniform cells in x direction
-      dx = Lx/nx                     ! compute uniform mesh spacing in x direciton
-      alpha = 1.03_WP                ! stretching ratio
-
-      !> compute number of cells for stretching in x direction (geometric series)
-      nx_stretch_max = 1000                   ! max allowed cells for stretching
-      nx_stretch = 1                          ! initialize number of cells for streching
-      dx_test = dx                            ! initialize mesh spacing for testing stretch length
-      L_test = 0.0_WP                         ! initailize stretching test length
-      do while (nx_stretch.lt.nx_stretch_max) 
-         dx_test = dx*(alpha**nx_stretch)     ! compute testing dx
-         L_test = L_test + dx_test            ! add spacing to Lx
-         nx_stretch = nx_stretch + 1          ! add one to stretching cells
-         if (L_test.ge.Lx_stretch)then        ! if L_test is greater than or equal Lx_stretch, exit the loop
-            exit                              ! exit the loop
-         end if
+      ! stretch left of domain
+      do i=nx_stretchL,1,-1
+         dx_old = abs(x(i+2) - x(i+1))
+         x(i) = x(i+1) - dx_old*alpha
       end do
-      allocate(x(nx+nx_stretch+1))            ! allocate x array (cell edges)
-      !> generate uniform mesh in x
-      do i=1,nx+1
-         x(i) = real(i-1,WP)*dx
-      end do
-      !> generate stretched mesh in x
-      do i=nx+2,nx+nx_stretch+1
-         dx_stretch = alpha*(x(i-1)-x(i-2))
-         x(i) = x(i-1) + dx_stretch
-      end do
-      !> 1D mesh, set y and z
-      allocate(y(2)); allocate(z(2))
-      y(1) = 0.0_WP; y(2) = dx
-      z(1) = 0.0_WP; z(2) = dx
-
-      this%Lx = Lx; this%nx = nx; this%nx_stretch = nx_stretch ! make these values available to the other subroutines 
       
+      ! stretch right of domain
+      do i=nx+nx_stretchL+2,nx+nx_stretchL+nx_stretchR+1
+         dx_old = x(i-1)-x(i-2)
+         x(i) = x(i-1)+dx_old*alpha
+      end do      
+
+      ! y mesh
+      do j = 1,ny+2*ny_stretch+1 !initialize y mesh array
+         y(j) = 0.0_WP
+      end do
+      
+      dy = Ly/ny ! define uniform grid spacing
+      y(ny/2+ny_stretch+1) = 0.0_WP !define the centerline of the domain
+      
+      !y array uniform region
+      do j = ny/2+ny_stretch+2,ny+ny_stretch+1
+         y(j) = y(j-1) + dy
+      end do
+      
+      !stretching in y
+      do j = ny+ny_stretch+2,ny+(2*ny_stretch)+1
+         dy_old = y(j-2) - y(j-3)
+         dy_stretch = alpha*dy_old
+         y(j) = y(j-1) + dy_stretch
+      end do
+      
+      ! mirror y across y=0 line
+      do j = 1,ny/2+ny_stretch
+         y(j) = -y(ny-j+(2*ny_stretch)+2)
+      end do
+      
+      ! z mesh
+      dz = Lz/nz ! define uniform grid spacing
+      z(nz/2+nz_stretch+1) = 0.0_WP !define centerline
+      
+      do k = nz/2+nz_stretch+2,nz+nz_stretch+1
+         z(k) = z(k-1) + dz
+      end do
+      
+      !stretching in z
+      do k = nz+nz_stretch+2,nz+(2*nz_stretch)+1
+         dz_old = z(k-2) - z(k-3)
+         dz_stretch = alpha*dz_old
+         z(k) = z(k-1) + dz_stretch
+      end do
+      
+      ! mirror z across centerline
+      do k = 1,nz/2+nz_stretch
+         z(k) = -z(nz-k+(2*nz_stretch)+2)
+      end do
+            
       ! General serial grid object
-      grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.true.,zper=.true.,name='ShockGen')
+      if (nz.gt.1)then
+         grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.false.,name='ShockGen')
+      else
+         grid=sgrid(coord=cartesian,no=3,x=x,y=y,z=z,xper=.false.,yper=.false.,zper=.true.,name='ShockGen')
+      end if
+
       ! Read in partition
-      call param_read('Partition',partition,short='p'); partition(2) = 1; partition(3) = 1; ! manually overwrite partition in y and z directions
+      call param_read('Partition',partition,short='p')
+      
       ! Create partitioned grid
-      this%cfg=config(grp=shockgen_group,decomp=partition,grid=grid)
+      this%cfg=config(grp=group,decomp=partition,grid=grid)
+
     end block create_config
     
     initialize_timetracker: block
       use param, only: param_read
 
-      real(WP) :: ddrop,start_xshock,final_xshock,vshock,relshockvel ! how far the shock will travel
+      real(WP) :: start_xshock,final_xshock,vshock,relshockvel ! how far the shock will travel
       real(WP) :: gamm_g,Ma,Grho0,GP0,Grho1,GP1,Ma1            ! gas properties
       
       this%time=timetracker(amRoot=this%cfg%amRoot)
@@ -127,11 +167,9 @@ contains
       call param_read('Max cfl number',this%time%cflmax)
 
       ! use shock values to calculate final simulation time
-      !call param_read('Droplet diameter',ddrop)
-      call param_read('Shock gen starting shock location',start_xshock)
-      call param_read('Shock gen ending shock location',final_xshock)
-      
+      call param_read('Single phase shock location',start_xshock)
       call param_read('Gas gamma',gamm_g)
+      call param_read('Final shock location',final_xshock) !final singlephase shock location
       call param_read('Pre-shock density',Grho0,default=1.204_WP)
       call param_read('Pre-shock pressure',GP0,default=1.01325e5_WP)
       call param_read('Mach number of shock',Ma,default=1.47_WP)
@@ -187,9 +225,15 @@ contains
       ! Reset moments to guarantee compatibility with interface reconstruction
       call this%vf%reset_volume_moments()
 
+      ! AS do we need this for a singlephase sim?
       ! add boundary conditions on VOF
       call this%vf%add_bcond(name='xright',type=neumann,locator=right_of_domain,dir='xp')
-      ! we are periodic in y and z direcitons
+      call this%vf%add_bcond(name='ytop',type=neumann,locator=top_of_domain,dir='yp')
+      call this%vf%add_bcond(name='ybottom',type=neumann,locator=bot_of_domain,dir='ym')
+      if (this%cfg%nz.gt.1)then
+         call this%vf%add_bcond(name='zfront',type=neumann,locator=fnt_of_domain,dir='zp')
+         call this%vf%add_bcond(name='zback',type=neumann,locator=bck_of_domain,dir='zm')
+      end if
       
       ! apply boundary conditions on VOF
       call this%vf%apply_bcond(this%time%t,this%time%dt)
@@ -225,13 +269,21 @@ contains
       integer :: i,j,k,n,nx
       real(WP), dimension(3) :: xyz
       real(WP) :: gamm_l,Pref_l,gamm_g,visc_l,visc_g,Pref,cv_l0,cv_g0,kappa_l,kappa_g
-      real(WP) :: vshock,relshockvel,Lx
+      real(WP) :: xshock,vshock,relshockvel,Lx,start_xshock
       real(WP) :: Grho0, GP0, Grho1, GP1, ST, Ma1, Ma, Lrho0, LP0, Mas
       type(bcond), pointer :: mybc
       
       ! variables for shock generation
-      real(WP) :: start_xshock,final_xshock
+      integer  :: n_shock,shock_index
+      real(WP) :: final_xshock,delta,dx,tol,shock_loc
 
+      ! set up for shock profile
+      call param_read('n_shock',n_shock) ! number of points to capture shock profile
+      call param_read('Lx',Lx); call param_read('nx',nx)
+      dx = Lx/nx ! mesh spacing in uniform region
+      tol = dx/2 ! set tolerance for reading in shock profile
+      delta = 2*dx*n_shock ! shock thickness
+      
       ! Create material model class
       this%matmod=matm(cfg=this%cfg,name='Liquid-gas models')
       
@@ -267,8 +319,8 @@ contains
       call param_read('Pre-shock density',Grho0,default=1.204_WP)
       call param_read('Pre-shock pressure',GP0,default=1.01325e5_WP)
       call param_read('Mach number of shock',Ma,default=1.47_WP)
-      call param_read('Shock gen starting shock location',start_xshock)
-      call param_read('Shock gen ending shock location',final_xshock)
+      call param_read('Single phase shock location',start_xshock) 
+      call param_read('Final shock location',final_xshock) 
 
       !use shock relations to get post shock numbers
       GP1 = GP0 * (2.0_WP*gamm_g*Ma**2 - (gamm_g-1.0_WP)) / (gamm_g+1.0_WP)
@@ -286,6 +338,9 @@ contains
          print*, 'Pre-shock:  Density',Grho0,'Pressure',GP0
          print*, 'Post-shock: Density',Grho1,'Pressure',GP1,'Gas Velocity',vshock
          print*, 'Shock velocity', relshockvel
+         print*, "Total shock profile points: ", 2*n_shock
+         print*, "Shock thickness: ", delta
+         print*, "Tolerance for finding shock center: ", tol
          print*, "=============================================="
       end if
 
@@ -312,7 +367,12 @@ contains
       ! Define boundary conditions - initialized values are intended dirichlet values too, for the cell centers
       call this%fs%add_bcond(name= 'inflow',type=dirichlet      ,locator=left_of_domain ,face='x',dir=-1)
       call this%fs%add_bcond(name='outflow',type=clipped_neumann,locator=right_of_domain,face='x',dir=+1)
-      ! we are periodic in y and z directions 
+      call this%fs%add_bcond(name='outflow',type=clipped_neumann,locator=bot_of_domain,face='y',dir=-1)
+      call this%fs%add_bcond(name='outflow',type=clipped_neumann,locator=top_of_domain,face='y',dir=+1)
+      if (this%cfg%nz.gt.1)then
+         call this%fs%add_bcond(name='outflow',type=clipped_neumann,locator=bck_of_domain,face='z',dir=-1)
+         call this%fs%add_bcond(name='outflow',type=clipped_neumann,locator=fnt_of_domain,face='z',dir=+1)
+      end if
 
       ! Calculate face velocities
       call this%fs%interp_vel_basic(this%vf,this%fs%Ui,this%fs%Vi,this%fs%Wi,this%fs%U,this%fs%V,this%fs%W)
@@ -348,88 +408,88 @@ contains
 
     end block set_IC_BC
       
-    ! !> singlephase, no need for smesh
-    ! !> create ensight output
-    ! create_ensight: block
-    !   use param,           only: param_read
-    !   ! Create Ensight output from cfg
-    !   this%ens_out=ensight(cfg=this%cfg,name='Shockgen')
-    !   ! Create event for Ensight output
-    !   this%ens_evt=event(time=this%time,name='Ensight output')
-    !   call param_read('Ensight output period',this%ens_evt%tper)
-    !   ! Add variables to output
-    !   call this%ens_out%add_vector('velocity',this%fs%Ui,this%fs%Vi,this%fs%Wi)
-    !   call this%ens_out%add_scalar('P',this%fs%P)
-    !   call this%ens_out%add_scalar('PA',this%fs%PA)
-    !   call this%ens_out%add_scalar('Grho',this%fs%Grho)
-    !   call this%ens_out%add_scalar('Lrho',this%fs%Lrho)
-    !   call this%ens_out%add_scalar('Density',this%fs%RHO)
-    !   call this%ens_out%add_scalar('Bulkmod',this%fs%RHOSS2)
-    !   call this%ens_out%add_scalar('VOF',this%vf%VF)
-    !   call this%ens_out%add_scalar('curvature',this%vf%curv)
-    !   call this%ens_out%add_scalar('Mach',this%fs%Mach)
-    !   call this%ens_out%add_scalar('fvf',this%cfg%VF)
-    !   call this%ens_out%add_scalar('Tmptr',this%fs%Tmptr)
-    !   call this%ens_out%add_scalar('SL_x',this%fs%sl_x) 
-    !   call this%ens_out%add_scalar('SL_y',this%fs%sl_y) 
-    !   call this%ens_out%add_scalar('SL_z',this%fs%sl_z) 
-    !   call this%ens_out%add_scalar('LP',this%fs%LP) 
-    !   call this%ens_out%add_scalar('GP',this%fs%GP) 
-    !   call this%ens_out%add_scalar('LrhoE',this%fs%LrhoE) 
-    !   call this%ens_out%add_scalar('GrhoE',this%fs%GrhoE)         
-    !   ! Output to ensight
-    !   if (this%ens_evt%occurs()) call this%ens_out%write_data(this%time%t)
-    ! end block create_ensight
+    !> singlephase, no need for smesh
+    !> create ensight output
+    !create_ensight: block
+    !  use param,           only: param_read
+    !  ! Create Ensight output from cfg
+    !  this%ens_out=ensight(cfg=this%cfg,name='Shockgen')
+    !  ! Create event for Ensight output
+    !  this%ens_evt=event(time=this%time,name='Ensight output')
+    !  call param_read('Ensight output period',this%ens_evt%tper)
+    !  ! Add variables to output
+    !  call this%ens_out%add_vector('velocity',this%fs%Ui,this%fs%Vi,this%fs%Wi)
+    !  call this%ens_out%add_scalar('P',this%fs%P)
+    !  call this%ens_out%add_scalar('PA',this%fs%PA)
+    !  call this%ens_out%add_scalar('Grho',this%fs%Grho)
+    !  call this%ens_out%add_scalar('Lrho',this%fs%Lrho)
+    !  call this%ens_out%add_scalar('Density',this%fs%RHO)
+    !  call this%ens_out%add_scalar('Bulkmod',this%fs%RHOSS2)
+    !  call this%ens_out%add_scalar('VOF',this%vf%VF)
+    !  call this%ens_out%add_scalar('curvature',this%vf%curv)
+    !  call this%ens_out%add_scalar('Mach',this%fs%Mach)
+    !  call this%ens_out%add_scalar('fvf',this%cfg%VF)
+    !  call this%ens_out%add_scalar('Tmptr',this%fs%Tmptr)
+    !  call this%ens_out%add_scalar('SL_x',this%fs%sl_x) 
+    !  call this%ens_out%add_scalar('SL_y',this%fs%sl_y) 
+    !  call this%ens_out%add_scalar('SL_z',this%fs%sl_z) 
+    !  call this%ens_out%add_scalar('LP',this%fs%LP) 
+    !  call this%ens_out%add_scalar('GP',this%fs%GP) 
+    !  call this%ens_out%add_scalar('LrhoE',this%fs%LrhoE) 
+    !  call this%ens_out%add_scalar('GrhoE',this%fs%GrhoE)         
+    !  ! Output to ensight
+    !  if (this%ens_evt%occurs()) call this%ens_out%write_data(this%time%t)
+    !end block create_ensight
 
-    ! !> Create a monitor file
-  !   create_monitor: block
-  !     ! Prepare some info about fields
-  !     call this%fs%get_cfl(this%time%dt,this%time%cfl)
-  !     call this%fs%get_max()
-  !     call this%vf%get_max()
-  !    ! Create simulation monitor
-  !     this%mfile=monitor(this%fs%cfg%amRoot,'simulation')
-  !     call this%mfile%add_column(this%time%n,'Timestep number')
-  !     call this%mfile%add_column(this%time%t,'Time')
-  !     call this%mfile%add_column(this%time%dt,'Timestep size')
-  !     call this%mfile%add_column(this%time%cfl,'Maximum CFL')
-  !     call this%mfile%add_column(this%fs%RHOmin,'RHOmin')
-  !     call this%mfile%add_column(this%fs%RHOmax,'RHOmax')
-  !     call this%mfile%add_column(this%fs%Umax,'Umax')
-  !     call this%mfile%add_column(this%fs%Vmax,'Vmax')
-  !     call this%mfile%add_column(this%fs%Wmax,'Wmax')
-  !     call this%mfile%add_column(this%fs%Pmax,'Pmax')
-  !     call this%mfile%add_column(this%fs%Tmax,'Tmax')
-  !     call this%mfile%write()
-  !     ! Create CFL monitor
-  !     this%cflfile=monitor(this%fs%cfg%amRoot,'cfl')
-  !     call this%cflfile%add_column(this%time%n,'Timestep number')
-  !     call this%cflfile%add_column(this%time%t,'Time')
-  !     call this%cflfile%add_column(this%fs%CFLst,'STension CFL')
-  !     call this%cflfile%add_column(this%fs%CFLc_x,'Convective xCFL')
-  !     call this%cflfile%add_column(this%fs%CFLc_y,'Convective yCFL')
-  !     call this%cflfile%add_column(this%fs%CFLc_z,'Convective zCFL')
-  !     call this%cflfile%add_column(this%fs%CFLv_x,'Viscous xCFL')
-  !     call this%cflfile%add_column(this%fs%CFLv_y,'Viscous yCFL')
-  !     call this%cflfile%add_column(this%fs%CFLv_z,'Viscous zCFL')
-  !     call this%cflfile%add_column(this%fs%CFLa_x,'Acoustic xCFL')
-  !     call this%cflfile%add_column(this%fs%CFLa_y,'Acoustic yCFL')
-  !     call this%cflfile%add_column(this%fs%CFLa_z,'Acoustic zCFL')
-  !     call this%cflfile%write()
-  !     ! Create convergence monitor
-  !     this%cvgfile=monitor(this%fs%cfg%amRoot,'cvg')
-  !     call this%cvgfile%add_column(this%time%n,'Timestep number')
-  !     call this%cvgfile%add_column(this%time%it,'Iteration')
-  !     call this%cvgfile%add_column(this%time%t,'Time')
-  !     call this%cvgfile%add_column(this%fs%impl_it_x,'Impl_x iteration')
-  !     call this%cvgfile%add_column(this%fs%impl_rerr_x,'Impl_x error')
-  !     call this%cvgfile%add_column(this%fs%impl_it_y,'Impl_y iteration')
-  !     call this%cvgfile%add_column(this%fs%impl_rerr_y,'Impl_y error')
-  !     call this%cvgfile%add_column(this%fs%implicit%it,'Impl_z iteration')
-  !     call this%cvgfile%add_column(this%fs%implicit%rerr,'Impl_z error')
-  !     call this%cvgfile%add_column(this%fs%psolv%it,'Pressure iteration')
-  !     call this%cvgfile%add_column(this%fs%psolv%rerr,'Pressure error')
-  !   end block create_monitor
+    !> Create a monitor file
+    !create_monitor: block
+    !  ! Prepare some info about fields
+    !  call this%fs%get_cfl(this%time%dt,this%time%cfl)
+    !  call this%fs%get_max()
+    !  call this%vf%get_max()
+    !  ! Create simulation monitor
+    !  this%mfile=monitor(this%fs%cfg%amRoot,'simulation')
+    !  call this%mfile%add_column(this%time%n,'Timestep number')
+    !  call this%mfile%add_column(this%time%t,'Time')
+    !  call this%mfile%add_column(this%time%dt,'Timestep size')
+    !  call this%mfile%add_column(this%time%cfl,'Maximum CFL')
+    !  call this%mfile%add_column(this%fs%RHOmin,'RHOmin')
+    !  call this%mfile%add_column(this%fs%RHOmax,'RHOmax')
+    !  call this%mfile%add_column(this%fs%Umax,'Umax')
+    !  call this%mfile%add_column(this%fs%Vmax,'Vmax')
+    !  call this%mfile%add_column(this%fs%Wmax,'Wmax')
+    !  call this%mfile%add_column(this%fs%Pmax,'Pmax')
+    !  call this%mfile%add_column(this%fs%Tmax,'Tmax')
+    !  call this%mfile%write()
+    !  ! Create CFL monitor
+    !  this%cflfile=monitor(this%fs%cfg%amRoot,'cfl')
+    !  call this%cflfile%add_column(this%time%n,'Timestep number')
+    !  call this%cflfile%add_column(this%time%t,'Time')
+    !  call this%cflfile%add_column(this%fs%CFLst,'STension CFL')
+    !  call this%cflfile%add_column(this%fs%CFLc_x,'Convective xCFL')
+    !  call this%cflfile%add_column(this%fs%CFLc_y,'Convective yCFL')
+    !  call this%cflfile%add_column(this%fs%CFLc_z,'Convective zCFL')
+    !  call this%cflfile%add_column(this%fs%CFLv_x,'Viscous xCFL')
+    !  call this%cflfile%add_column(this%fs%CFLv_y,'Viscous yCFL')
+    !  call this%cflfile%add_column(this%fs%CFLv_z,'Viscous zCFL')
+    !  call this%cflfile%add_column(this%fs%CFLa_x,'Acoustic xCFL')
+    !  call this%cflfile%add_column(this%fs%CFLa_y,'Acoustic yCFL')
+    !  call this%cflfile%add_column(this%fs%CFLa_z,'Acoustic zCFL')
+    !  call this%cflfile%write()
+    !  ! Create convergence monitor
+    !  this%cvgfile=monitor(this%fs%cfg%amRoot,'cvg')
+    !  call this%cvgfile%add_column(this%time%n,'Timestep number')
+    !  call this%cvgfile%add_column(this%time%it,'Iteration')
+    !  call this%cvgfile%add_column(this%time%t,'Time')
+    !  call this%cvgfile%add_column(this%fs%impl_it_x,'Impl_x iteration')
+    !  call this%cvgfile%add_column(this%fs%impl_rerr_x,'Impl_x error')
+    !  call this%cvgfile%add_column(this%fs%impl_it_y,'Impl_y iteration')
+    !  call this%cvgfile%add_column(this%fs%impl_rerr_y,'Impl_y error')
+    !  call this%cvgfile%add_column(this%fs%implicit%it,'Impl_z iteration')
+    !  call this%cvgfile%add_column(this%fs%implicit%rerr,'Impl_z error')
+    !  call this%cvgfile%add_column(this%fs%psolv%it,'Pressure iteration')
+    !  call this%cvgfile%add_column(this%fs%psolv%rerr,'Pressure error')
+    !end block create_monitor
   end subroutine init
 
   !> Take one time step with specified dt
@@ -503,6 +563,7 @@ contains
     !if (this%ens_evt%occurs()) then
     !   call this%ens_out%write_data(this%time%t)            
     !end if
+    
     ! Perform and output monitoring
     !call this%fs%get_max()
     !call this%vf%get_max()
@@ -513,28 +574,38 @@ contains
   end subroutine step
     
   !> Finalize shock generator (sgen) simulation
-  subroutine final(this,shockgen_group)
-    use param,    only: param_read
-    use parallel, only: amRoot
-    use mpi_f08,  only: MPI_Group,MPI_ALLREDUCE,MPI_SUM,MPI_DOUBLE_PRECISION
+  subroutine final(this)
+    use param,      only: param_read
+    use parallel,   only: amRoot
+    use mpi_f08
     use parallel
     implicit none
-    class (sgen), intent(inout) :: this
-    type(MPI_Group), intent(in) :: shockgen_group
-    integer :: i,j,shock_index,n_shock,nx,nx_stretchL,nx_stretchR,nx_total
+    class (sgen), intent(inout) :: this    
+    integer :: i,j,shock_index,n_shock,nx,nx_stretchL,nx_stretchR,nx_total,ny_center,nz_center
     real(WP) :: final_xshock, delta, start_ref,Lx
     real(WP) :: tol ! tolerance for finding final shock location in singlephase
-    real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, GP_profile, Ui_profile ! shock profile arrays
+    real(WP), dimension(:),  allocatable :: Grho_profile, GrhoE_profile, GP_profile, Ui_profile ! profile arrays
     real(WP), dimension(:),  allocatable :: Grho_center, GrhoE_center, GP_center, Ui_center,Grho_global,GrhoE_global,GP_global,Ui_global    ! centerline arrays
     integer :: ierr
 
-    call param_read('n_shock',n_shock)
-    call param_read('Shock gen ending shock location',final_xshock)
+    call param_read('nx',nx);
+    call param_read('Lx',Lx);  call param_read('Lx ref',start_ref);
+    call param_read('n_shock',n_shock); call param_read('nx stretch left',nx_stretchL); call param_read('nx stretch right',nx_stretchR);
+    call param_read('Final shock location',final_xshock)
+    call param_read('Lx ref', start_ref, default=0.0_WP);
 
-    nx_total = this%nx + this%nx_stretch ! total number of cells in x
+    nx_total = nx + nx_stretchR + nx_stretchL ! total number of cells in x
     delta = 2*this%cfg%dx(1)*n_shock !shock thickness
-    tol = this%Lx/this%nx ! set the tolerance to the mesh spacing in the uniform region
+    tol = (Lx - start_ref)/nx ! set the tolerance to the mesh spacing in the uniform region
     shock_index = 0;
+
+    ! define centerline index
+    ny_center = this%cfg%ny/2
+    if (this%cfg%nz.gt.1)then
+       nz_center = this%cfg%nz/2
+    else
+       nz_center = 1
+    end if
 
     ! allocate shock profile arrays
     allocate(this%Grho_profile(2*n_shock+1));allocate(this%GrhoE_profile(2*n_shock+1));allocate(this%Ui_profile(2*n_shock+1));allocate(this%GP_profile(2*n_shock+1))
@@ -554,35 +625,45 @@ contains
 
     ! if our proc is contains the centerline, store local centerline variables on each processor
     if (((this%cfg%y(this%cfg%jmin_).le.0.0_WP).and.(this%cfg%y(this%cfg%jmax_).ge.0.0_WP)).and.(this%cfg%z(this%cfg%kmin_).le.0.0_WP).and.(this%cfg%z(this%cfg%kmax_).ge.0.0_WP))then
-       Grho_center(this%cfg%imin_:this%cfg%imax_)  = this%fs%Grho(this%cfg%imin_:this%cfg%imax_,1,1)
-       GrhoE_center(this%cfg%imin_:this%cfg%imax_) = this%fs%GrhoE(this%cfg%imin_:this%cfg%imax_,1,1)
-       GP_center(this%cfg%imin_:this%cfg%imax_)    = this%fs%GP(this%cfg%imin_:this%cfg%imax_,1,1)
-       Ui_center(this%cfg%imin_:this%cfg%imax_)    = this%fs%Ui(this%cfg%imin_:this%cfg%imax_,1,1)
+       Grho_center(this%cfg%imin_:this%cfg%imax_)  = this%fs%Grho(this%cfg%imin_:this%cfg%imax_,ny_center,nz_center)
+       GrhoE_center(this%cfg%imin_:this%cfg%imax_) = this%fs%GrhoE(this%cfg%imin_:this%cfg%imax_,ny_center,nz_center)
+       GP_center(this%cfg%imin_:this%cfg%imax_)    = this%fs%GP(this%cfg%imin_:this%cfg%imax_,ny_center,nz_center)
+       Ui_center(this%cfg%imin_:this%cfg%imax_)    = this%fs%Ui(this%cfg%imin_:this%cfg%imax_,ny_center,nz_center)
     end if
 
     ! use mpi_allreduce sum to 'concatenate' arrays
-    call MPI_ALLREDUCE(Grho_center,Grho_global,this%cfg%imax,MPI_DOUBLE_PRECISION,MPI_SUM,this%cfg%comm,ierr)
-    call MPI_ALLREDUCE(GrhoE_center,GrhoE_global,this%cfg%imax,MPI_DOUBLE_PRECISION,MPI_SUM,this%cfg%comm,ierr)
-    call MPI_ALLREDUCE(GP_center,GP_global,this%cfg%imax,MPI_DOUBLE_PRECISION,MPI_SUM,this%cfg%comm,ierr)
-    call MPI_ALLREDUCE(Ui_center,Ui_global,this%cfg%imax,MPI_DOUBLE_PRECISION,MPI_SUM,this%cfg%comm,ierr)
+    call MPI_ALLREDUCE(Grho_center,Grho_global,this%cfg%imax,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(GrhoE_center,GrhoE_global,this%cfg%imax,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(GP_center,GP_global,this%cfg%imax,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(Ui_center,Ui_global,this%cfg%imax,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,ierr)
     
-    ! AS extract shock profile for every proc
-    shock_index = -10 ! initialize shock index to zero
-    do i=this%cfg%imin,this%cfg%imax
-       !print*, "i index: ", i
-       if ((this%cfg%xm(i).lt.(final_xshock+tol)).and.(this%cfg%xm(i).gt.(final_xshock-tol))) then
-          !print*, "sgen: The shock has been found at index: ", i
-          shock_index=i
-          !print*, "sgen: stored shock index", shock_index
-       end if
-    end do
-    
-    do i=shock_index-n_shock,shock_index+n_shock ! saving 2*n_shock+1 points
-       this%Grho_profile(i-shock_index+n_shock+1) = Grho_global(i)
-       this%GrhoE_profile(i-shock_index+n_shock+1) = GrhoE_global(i)
-       this%GP_profile(i-shock_index+n_shock+1) = GP_global(i)
-       this%Ui_profile(i-shock_index+n_shock+1) = Ui_global(i)
-    end do
+    ! AS extract shock profile in serial on root proc
+    if(amRoot)then
+       shock_index = 0 ! initialize shock index to zero
+       do i=this%cfg%imin,this%cfg%imax
+          !print*, "i index: ", i
+          if ((this%cfg%xm(i).lt.(final_xshock+tol)).and.(this%cfg%xm(i).gt.(final_xshock-tol))) then
+             !print*, "sgen: The shock has been found at index: ", i
+             shock_index=i
+             !print*, "sgen: stored shock index", shock_index
+          end if
+       end do
+       
+       do i=shock_index-n_shock,shock_index+n_shock 
+          this%Grho_profile(i-shock_index+n_shock+1) = Grho_global(i)
+          this%GrhoE_profile(i-shock_index+n_shock+1) = GrhoE_global(i)
+          this%GP_profile(i-shock_index+n_shock+1) = GP_global(i)
+          this%Ui_profile(i-shock_index+n_shock+1) = Ui_global(i)
+       end do
+
+    end if
+
+    ! broadcast profile arrays to all other cores (we do this since we find the shock profile only on the root proc)
+    ! there might be a better way to do this without BCAST
+    call MPI_BCAST(this%Grho_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(this%GrhoE_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(this%GP_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(this%Ui_profile,2*n_shock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
 
   end subroutine final
   
