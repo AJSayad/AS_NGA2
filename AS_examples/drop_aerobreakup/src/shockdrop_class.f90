@@ -109,6 +109,23 @@ contains
       dx = Lx/nx; dy = Ly/ny                                         ! uniform mesh spacing
       alpha = 1.03_WP ! set stretching ratio
 
+      ! if no stretching, make sure our stretching cells are set to zero, hack fix for now 
+      if(D0X_stretch.lt.0.1_WP)then
+         nx_stretch = 0
+      else
+         nx_stretch = 1 ! initialize number of cells for streching
+      end if
+      if(D0Y_stretch.lt.0.1_WP)then
+         ny_stretch = 0
+      else
+         ny_stretch = 1 ! initialize number of cells for streching
+      end if
+      if(D0Z_stretch.lt.0.1_WP)then
+         nz_stretch = 0
+      else
+         nz_stretch = 1 ! initialize number of cells for streching
+      end if
+
       if (D0Z.gt.0)then ! if 3D
          Lz = D0Z*ddrop                 ! compute domain lengths
          Lz_stretch = D0Z_stretch*ddrop ! compute stretching lengths
@@ -122,18 +139,19 @@ contains
       end if
 
       !> compute number of cells for stretching in x direction (geometric series)
-      nx_stretch_max = 1000                   ! max allowed cells for stretching
-      nx_stretch = 1                          ! initialize number of cells for streching
-      dx_test = dx                            ! initialize mesh spacing for testing stretch length
-      L_test = 0.0_WP                         ! initailize stretching test length
-      do while (nx_stretch.lt.nx_stretch_max) 
-         dx_test = dx*(alpha**nx_stretch)     ! compute testing dx
-         L_test = L_test + dx_test            ! add spacing to Lx
-         nx_stretch = nx_stretch + 1          ! add one to stretching cells
-         if (L_test.ge.Lx_stretch)then        ! if L_test is greater than or equal Lx_stretch, exit the loop
-            exit                              ! exit the loop
-         end if
-      end do
+      if(D0X_stretch.gt.0.1_WP)then
+         nx_stretch_max = 1000                   ! max allowed cells for stretching
+         dx_test = dx                            ! initialize mesh spacing for testing stretch length
+         L_test = 0.0_WP                         ! initailize stretching test length
+         do while (nx_stretch.lt.nx_stretch_max) 
+            dx_test = dx*(alpha**nx_stretch)     ! compute testing dx
+            L_test = L_test + dx_test            ! add spacing to Lx
+            nx_stretch = nx_stretch + 1          ! add one to stretching cells
+            if (L_test.ge.Lx_stretch)then        ! if L_test is greater than or equal Lx_stretch, exit the loop
+               exit                              ! exit the loop
+            end if
+         end do
+      end if
       allocate(x(nx+nx_stretch+1))            ! allocate x array (cell edges)
       !> generate uniform mesh in x (cell edges)
       do i=1,nx+1
@@ -146,21 +164,24 @@ contains
       end do
 
       !> compute number of cells for stretching in y direction
-      ny_stretch_max = 1000                   ! max allowed cells for stretching
-      ny_stretch = 1                          ! initialize number of cells for streching
-      dy_test = dy                            ! initialize mesh spacing for testing stretch length
-      L_test = 0.0_WP                         ! initailize stretching test length
-      do while (ny_stretch.lt.ny_stretch_max) 
-         dy_test = dy*(alpha**ny_stretch)     ! compute testing dy
-         L_test = L_test + dy_test            ! add spacing to Ly
-         ny_stretch = ny_stretch + 1          ! add one to stretching cells
-         if (L_test.ge.Ly_stretch)then        ! if L_test is greater than or equal Ly_stretch, exit the loop
-            exit                              ! exit the loop
-         end if
-      end do
+      if(D0Y_stretch.gt.0.1_WP)then
+         ny_stretch_max = 1000                   ! max allowed cells for stretching
+         dy_test = dy                            ! initialize mesh spacing for testing stretch length
+         L_test = 0.0_WP                         ! initailize stretching test length
+         do while (ny_stretch.lt.ny_stretch_max) 
+            dy_test = dy*(alpha**ny_stretch)     ! compute testing dy
+            L_test = L_test + dy_test            ! add spacing to Ly
+            ny_stretch = ny_stretch + 1          ! add one to stretching cells
+            if (L_test.ge.Ly_stretch)then        ! if L_test is greater than or equal Ly_stretch, exit the loop
+               exit                              ! exit the loop
+            end if
+         end do
+      end if
       if (mod(2*ny_stretch+ny,2).ne.0)then    ! enforce divisibility by 0 for mirroring
-         print*, "Warning: shockdrop_class: init_grid: ny total is not divisible by 2. Adding 1 cell to ny for mirroring mesh."
          ny = ny + 1
+         if (amRoot)then
+            print*, "Warning: shockdrop_class: init_grid: ny total is not divisible by 2. Adding 1 cell to ny for mirroring mesh."
+         end if
       end if
       allocate(y(ny+2*ny_stretch+1))          ! allocate y array (cell edges)
       y(ny/2+ny_stretch+1) = 0.0_WP           ! set the centerline to zero
@@ -179,22 +200,25 @@ contains
       end do
 
       if (D0Z.gt.0)then
-         !> compute number of cells for stretching in z direction
-         nz_stretch_max = 1000                   ! max allowed cells for stretching
-         nz_stretch = 1                          ! initialize number of cells for streching
-         dz_test = dz                            ! initialize mesh spacing for testing stretch length
-         L_test = 0.0_WP                         ! initailize stretching test length
-         do while (nz_stretch.lt.nz_stretch_max) 
-            dz_test = dz*(alpha**nz_stretch)     ! compute testing dz
-            L_test = L_test + dz_test            ! add spacing to Lz
-            nz_stretch = nz_stretch + 1          ! add one to stretching cells
-            if (L_test.ge.Lz_stretch)then        ! if L_test is greater than or equal Lz_stretch, exit the loop
-               exit                              ! exit the loop
-            end if
-         end do
+         if(D0Z_stretch.gt.0.1_WP)then
+            !> compute number of cells for stretching in z direction
+            nz_stretch_max = 1000                   ! max allowed cells for stretching
+            dz_test = dz                            ! initialize mesh spacing for testing stretch length
+            L_test = 0.0_WP                         ! initailize stretching test length
+            do while (nz_stretch.lt.nz_stretch_max) 
+               dz_test = dz*(alpha**nz_stretch)     ! compute testing dz
+               L_test = L_test + dz_test            ! add spacing to Lz
+               nz_stretch = nz_stretch + 1          ! add one to stretching cells
+               if (L_test.ge.Lz_stretch)then        ! if L_test is greater than or equal Lz_stretch, exit the loop
+                  exit                              ! exit the loop
+               end if
+            end do
+         end if
          if (mod(2*nz_stretch+nz,2).ne.0)then    ! enforce divisibilitz by 0 for mirroring
-            print*, "Warning: shockdrop_class: init_grid: nz total is not divisible by 2. Adding 1 cell to nz for mirroring mesh."
             nz = nz + 1
+            if (amRoot)then
+               print*, "Warning: shockdrop_class: init_grid: nz total is not divisible by 2. Adding 1 cell to nz for mirroring mesh."
+            end if
          end if
          allocate(z(nz+2*nz_stretch+1))          ! allocate z array (cell edges)
          z(nz/2+nz_stretch+1) = 0.0_WP           ! set the centerline to zero
