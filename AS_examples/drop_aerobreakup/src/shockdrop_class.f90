@@ -68,6 +68,40 @@ contains
     real(WP) :: G
     G=1.0_WP-sqrt((xyz(1)-dctr(1))**2+(xyz(2)-dctr(2))**2)/(ddrop/2.0)
   end function levelset_cyl
+
+  !> Function that defines a level sest function for a perturbed cylindrical droplet (2D)
+  function levelset_cyl_perturbed(xyz,t) result(G)
+    use mathtools,       only: Pi
+    implicit none
+    real(WP), dimension(3), intent(in) :: xyz
+    real(WP), intent(in)   :: t                  ! kept for now in case we want time dependence in the future
+    real(WP), dimension(3) :: epsilon,phase      ! user tunable parameters
+    integer, dimension(3)  :: mode               ! user tunable parameters
+    real(WP) :: theta,perturbation               ! polar angle and total perturbation
+    real(WP) :: dx,dy,r                          ! local variables
+    integer  :: i 
+    real(WP) :: G
+    ! shift to droplet center and compute radius
+    dx = xyz(1) - dctr(1)
+    dy = xyz(2) - dctr(2)
+    r = sqrt(dx**2 + dy**2)
+    if (r.eq.0.0_WP) then
+       G = 1.0_WP ! avoid division by zero
+       return
+    end if
+    ! perturbation definition
+    epsilon = ddrop*(/0.01_WP, 0.009_WP, 0.008_WP/) ! amplitudes
+    mode    = (/12, 11, 10/)                        ! modes (wave number)
+    phase   = (/Pi, (3*Pi)/4, 0.0_WP/)              ! phase shifts
+    theta  = atan2(dy,dx)                           ! compute polar angle (dctr shift is coded into function var dx and dy)
+    perturbation = 0.0_WP                           ! initialize our perturbation to 0
+    do i=1,size(mode,1)
+       perturbation = perturbation  + epsilon(i)*sin(mode(i)*theta + phase(i)) ! compute total perturbation
+    end do
+    ! define our level set (non-distance level set function as opposed to signed distance function)
+    !G = 1.0_WP - sqrt(dx**2 + dy**2) - (r + perturbation)
+    G = 1.0_WP - r/(ddrop/2.0_WP + perturbation)
+  end function levelset_cyl_perturbed
   
   !> Function that defines a level set function for a spherical droplet (3D)
   function levelset_sphere(xyz,t) result(G)
@@ -350,6 +384,7 @@ contains
       real(WP), dimension(3) :: v_cent,a_cent
       real(WP)  :: vol,area
       integer,  parameter :: amr_ref_lvl=4
+      logical :: perturb_drop_flag ! flag for initializing droplet with perturbation (currently only for 2D)
 
       ! Create a VOF solver with PLICnet reconstruction
       call this%vf%initialize(cfg=this%cfg,reconstruction_method=plicnet,transport_method=flux,name='VOF')
@@ -357,6 +392,7 @@ contains
       ! Initialize liquid
       call param_read('Droplet diameter',ddrop)
       call param_read('Droplet location',dctr)
+      call param_read('Perturbation flag',perturb_drop_flag)
       do k=this%vf%cfg%kmino_,this%vf%cfg%kmaxo_
          do j=this%vf%cfg%jmino_,this%vf%cfg%jmaxo_
             do i=this%vf%cfg%imino_,this%vf%cfg%imaxo_
@@ -372,7 +408,11 @@ contains
                ! Call adaptive refinement code to get volume and barycenters recursively
                vol=0.0_WP; area=0.0_WP; v_cent=0.0_WP; a_cent=0.0_WP
                if (this%vf%cfg%nz.eq.1) then
-                  call cube_refine_vol(cube_vertex,vol,area,v_cent,a_cent,levelset_cyl,0.0_WP,amr_ref_lvl)
+                  if(perturb_drop_flag.eqv.(.true.))then
+                     call cube_refine_vol(cube_vertex,vol,area,v_cent,a_cent,levelset_cyl_perturbed,0.0_WP,amr_ref_lvl) ! perturbed droplet
+                  else
+                     call cube_refine_vol(cube_vertex,vol,area,v_cent,a_cent,levelset_cyl,0.0_WP,amr_ref_lvl)           ! perfect droplet
+                  end if
                else
                   call cube_refine_vol(cube_vertex,vol,area,v_cent,a_cent,levelset_sphere,0.0_WP,amr_ref_lvl)
                end if

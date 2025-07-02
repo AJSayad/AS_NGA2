@@ -2,7 +2,7 @@
 Partition : 5 4 1
 I/O partition: 1 1 1
 
-Cells per diameter: 100 # number of cells across droplet diameter 
+Cells per diameter: 50 # number of cells across droplet diameter 
 D0X: 12 # droplet diameter lengths in x
 D0Y: 4  # droplet diameter lengths in y
 D0Z: 0  # droplet diameter lengths in z (set to 0 for 2D)
@@ -12,6 +12,7 @@ D0Y stretch: 2 # droplet diameter lengths to stretch by in y
 D0Z stretch: 0 # droplet diameter lengths to stretch by in z
 
 # Flow setup
+Perturbation flag:   true
 Droplet diameter :   0.00187 
 Droplet location :   0.0028  0 0 
 Shock location :     0.0017 
