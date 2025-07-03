@@ -74,11 +74,10 @@ contains
     use mathtools,       only: Pi
     implicit none
     real(WP), dimension(3), intent(in) :: xyz
-    real(WP), intent(in)   :: t                  ! kept for now in case we want time dependence in the future
-    real(WP), dimension(3) :: epsilon,phase      ! user tunable parameters
-    integer, dimension(3)  :: mode               ! user tunable parameters
-    real(WP) :: theta,perturbation               ! polar angle and total perturbation
-    real(WP) :: dx,dy,r                          ! local variables
+    real(WP), intent(in)   :: t               ! kept for now in case we want time dependence in the future
+    real(WP), dimension(5) :: lambda,epsilon  ! user tunable parameters
+    real(WP) :: theta,perturbation            ! polar angle and total perturbation
+    real(WP) :: dx,dy,r                       ! local variables
     integer  :: i 
     real(WP) :: G
     ! shift to droplet center and compute radius
@@ -90,16 +89,14 @@ contains
        return
     end if
     ! perturbation definition
-    epsilon = ddrop*(/0.01_WP, 0.009_WP, 0.008_WP/) ! amplitudes
-    mode    = (/12, 11, 10/)                        ! modes (wave number)
-    phase   = (/Pi, (3*Pi)/4, 0.0_WP/)              ! phase shifts
-    theta  = atan2(dy,dx)                           ! compute polar angle (dctr shift is coded into function var dx and dy)
-    perturbation = 0.0_WP                           ! initialize our perturbation to 0
-    do i=1,size(mode,1)
-       perturbation = perturbation  + epsilon(i)*sin(mode(i)*theta + phase(i)) ! compute total perturbation
+    lambda  = 1e-6_WP*(/280, 200, 150, 100, 50/)           ! wavelengths (NOTE: if this is smaller than mesh res it will not be resolved)
+    epsilon = lambda*(/0.025, 0.025, 0.025, 0.025, 0.025/) ! amplitudes (2.5% of wavelength)
+    theta  = atan2(dy,dx)                                  ! compute polar angle (dctr shift is coded into function var dx and dy)
+    perturbation = 0.0_WP                                  ! initialize our perturbation to 0
+    do i=1,size(lambda,1)
+       perturbation = perturbation  + epsilon(i)*sin(2*Pi*(ddrop/2.0_WP)*theta/lambda(i)) ! compute total perturbation
     end do
     ! define our level set (non-distance level set function as opposed to signed distance function)
-    !G = 1.0_WP - sqrt(dx**2 + dy**2) - (r + perturbation)
     G = 1.0_WP - r/(ddrop/2.0_WP + perturbation)
   end function levelset_cyl_perturbed
   
