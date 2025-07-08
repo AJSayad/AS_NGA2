@@ -281,9 +281,11 @@ contains
             print *, 'Droplet diameter lengths in z: ', D0Z
          end if
          print*, 'Domain length in x: ', Lx
-         print*, 'Domain height in y: ', Ly
+         print*, 'Total Domain height in y: ', Ly
+         print*, 'Domain height above/below centerline (y=0): ', 0.5*Ly
          if (D0Z.gt.0) then
             print*, 'Domain depth in z: ', Lz
+            print*, 'Domain depth in front/behind of centerline (z=0): ', 0.5*Lz
          end if
          print*, '======== STRETCHED DOMAIN DESCRIPTION ========'
          print*, 'Droplet diameter lengths added in x: ', D0X_stretch
@@ -1142,6 +1144,7 @@ contains
       
       ! Read in surface tension coefficient
       call param_read('Surface tension coefficient',this%fs%sigma)
+      
       ! Liquid and gas density
       call param_read('Liquid density',Lrho0);
       call param_read('Pre-shock density',Grho0,default=1.204_WP)
