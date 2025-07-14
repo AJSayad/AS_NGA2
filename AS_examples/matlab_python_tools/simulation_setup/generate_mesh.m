@@ -36,15 +36,19 @@ end
 
 alpha = 1.03; % stretching ratio
 
-% !> compute nx_stretch
-nx_stretch_max = 1000; nx_stretch = 1; dx_test = dx_uni; Lx_test = 0;
-while nx_stretch < nx_stretch_max
-    dx_test = dx_uni*alpha^nx_stretch;
-    Lx_test = Lx_test + dx_test;
-    nx_stretch = nx_stretch + 1;
-    if Lx_test >= Lx_stretch
-        break % in fortran this will be exit
+if DX_stretch>0.1
+    % !> compute nx_stretch
+    nx_stretch_max = 1000; nx_stretch = 1; dx_test = dx_uni; Lx_test = 0;
+    while nx_stretch < nx_stretch_max
+        dx_test = dx_uni*alpha^nx_stretch;
+        Lx_test = Lx_test + dx_test;
+        nx_stretch = nx_stretch + 1;
+        if Lx_test >= Lx_stretch
+            break % in fortran this will be exit
+        end
     end
+else
+    nx_stretch = 0; % set to zero if no stretching
 end
 x = zeros(nx+nx_stretch+1,1); % allocate x mesh
 
@@ -58,19 +62,24 @@ for i=nx+2:nx+nx_stretch+1
     x(i) = x(i-1) + dx_stretch;
 end
 
-% !> compute ny_stretch
-ny_stretch_max = 1000; ny_stretch = 1; dy_test = dy_uni; Ly_test = 0;
-while ny_stretch < ny_stretch_max
-    dy_test = dy_uni*alpha^ny_stretch;
-    Ly_test = Ly_test + dy_test;
-    ny_stretch = ny_stretch + 1;
-    if Ly_test >= Ly_stretch
-        break % in fortran this will be exit
+if DY_stretch>0.1
+    % !> compute ny_stretch
+    ny_stretch_max = 1000; ny_stretch = 1; dy_test = dy_uni; Ly_test = 0;
+    while ny_stretch < ny_stretch_max
+        dy_test = dy_uni*alpha^ny_stretch;
+        Ly_test = Ly_test + dy_test;
+        ny_stretch = ny_stretch + 1;
+        if Ly_test >= Ly_stretch
+            break % in fortran this will be exit
+        end
     end
+else
+    ny_stretch=0
 end
-if (mod(ny_stretch,2)~=0)
-    ny_stretch = ny_stretch +1; % add 1 to ny_stretch to ensure divisibility by 2 for mirroring
+if (mod(ny+2*ny_stretch,2)~=0)
+    ny = ny +1; % add 1 to ny to ensure divisibility by 2 for mirroring
 end
+
 y = zeros(ny+2*ny_stretch+1,1); % allocate y array
 y(ny/2 + ny_stretch + 1) = 0;   % define centerline to be zero
 if (mod(ny+2*ny_stretch,2)~=0)
@@ -95,17 +104,22 @@ for j=1:ny/2+ny_stretch
 end
 
 if nz>1
-    % !> compute nz_stretch
-    nz_stretch_max = 1000; nz_stretch = 1; dz_test = dz_uni; Lz_test = 0;
-    while nz_stretch < nz_stretch_max
-        dz_test = dz_uni*alpha^nz_stretch;
-        Lz_test = Lz_test + dz_test;
-        nz_stretch = nz_stretch + 1;
-        if Lz_test >= Lz_stretch
-            break % in fortran this will be exit
+    if DZ_stretch>0.1
+        % !> compute nz_stretch
+        nz_stretch_max = 1000; nz_stretch = 1; dz_test = dz_uni; Lz_test = 0;
+        while nz_stretch < nz_stretch_max
+            dz_test = dz_uni*alpha^nz_stretch;
+            Lz_test = Lz_test + dz_test;
+            nz_stretch = nz_stretch + 1;
+            if Lz_test >= Lz_stretch
+                break % in fortran this will be exit
+            end
         end
+    else
+        nz_stretch=0;
     end
-    if (mod(nz_stretch,2)~=0)
+
+    if (mod(nz + 2*nz_stretch,2)~=0)
         nz_stretch = nz_stretch +1; % add 1 to nz_stretch to ensure divisibilitz by 2 for mirroring
     end
     z = zeros(nz+2*nz_stretch+1,1); % allocate z array
