@@ -1,4 +1,4 @@
-function [figure_with_overlay] = blueOverlay(figure_handle,XX,YY, phi, time_flag,tau, Lx, Ly, d0, Kliq, Kgas, const, VOF_work, threshold, translucent_level)
+function [figure_with_overlay] = blueOverlay(figure_handle,XX,YY, phi, time_flag,tau, DX, DY, d0, Kliq, Kgas, const, VOF_work, threshold, translucent_level)
                                              
 figure_with_overlay = figure_handle;
 ax = axes('PositionConstraint','innerposition', 'Units', 'pixels');
@@ -12,7 +12,7 @@ colormap(ax, gray(256))                           % Schlieren colormap
 hold(ax, 'on')
 
 % set limits on axes
-xlim([0 Lx/d0]); ylim([-Ly/(2*d0) Ly/(2*d0)])
+xlim([0 DX]); ylim([-DY/2 DY/2])
 
 % Title
 if time_flag == 1
