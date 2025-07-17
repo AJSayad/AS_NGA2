@@ -1,8 +1,18 @@
 %% Post processing example for matlab
 clear all; close all; clc; plot_formatting; format long
 
-time_flag = 1; % compute non-dimensional time?
+% parallelization
+% data distribution is handled intrinsically by matlab client using a round robin distribution
+poolobj = gcp('nocreate'); % get current pool object
+if ~isempty(poolobj) % if pool object is not empty, delete it so we can create a new one
+    delete(poolobj)
+end
 
+np = 4; % number of tasks for processing data
+parpool('local',np) % initialize parallel pool
+set(0, 'DefaultFigureVisible', 'off'); % render graphics off-screen
+
+time_flag = 1; % compute non-dimensional time?
 %% mesh grid
 d0 = 0.00187;    % droplet diameter
 dctrx = 0.0028;  % droplet location in x
@@ -17,7 +27,7 @@ DX_stretch = 2; % number of droplet diameter lengths to add at the end of the x 
 DY_stretch = 2; % number of droplet diameter lengths to add at the top AND bottom of y direction
 DZ_stretch = 0; % number of droplet diameter lengths to add at the top AND bottom of z direction
 
-[x,y,z,nx,nx_stretch,ny,ny_stretch,nz,nz_stretch,dx_uni,dy_uni,dz_uni] = generate_mesh(d0,CPD,DX,DY,DZ,DX_stretch,DY_stretch,DZ_stretch)
+[x,y,z,nx,nx_stretch,ny,ny_stretch,nz,nz_stretch,dx_uni,dy_uni,dz_uni] = generate_mesh(d0,CPD,DX,DY,DZ,DX_stretch,DY_stretch,DZ_stretch);
 
 x = x(1:end-1); % trim off last point (since we define cell edges)
 y = y(1:end-1);
@@ -76,7 +86,7 @@ dataMatrices = cell(1, nfiles);
 %% notes
 % overlay VOF with a threshold using sky colormap
 
-for q=1:nfiles %1:nfiles 
+for q=1:nfiles
     filename = fullfile(folder, files(q).name)
     
     % read in the data as a cell array
@@ -97,14 +107,20 @@ for q=1:nfiles %1:nfiles
     %schileren
     mixrho_work = work_array(:,3); % store mixrho in work array
     mixrho_work = reshape(mixrho_work,nx+nx_stretch,ny+2*ny_stretch); % rearrange array
+    mixrho_work = distributed(mixrho_work); % AS: distribute mixrho work array among workers
     VOF_work = work_array(:,4); % store VOF in work array
     VOF_work = reshape(VOF_work,nx+nx_stretch,ny+2*ny_stretch);
+    VOF_work = distributed(VOF_work); % AS: distribute VOF work array among tasks
+    spmd % single program multiple data
+        beta = Kliq*VOF_work + Kgas*(1-VOF_work); % compute beta function on multiple tasks
+        [grad_mixrhox, grad_mixrhoy, grad_mixrhoz] = fastgrad(mixrho_work,x,y); % compute gradient on multiple tasks
+        mag_grad_mixrho = sqrt(grad_mixrhox.^2 + grad_mixrhoy.^2); % compute magnitude needs to be generalized for 3D
+        phi = exp(-beta.*(mag_grad_mixrho./const)); % compute schlieren
+    end
 
-    beta = Kliq*VOF_work + Kgas*(1-VOF_work); % compute beta function
-    [grad_mixrhox, grad_mixrhoy, grad_mixrhoz] = fastgrad(mixrho_work,x,y); % compute gradient
-    mag_grad_mixrho = sqrt(grad_mixrhox.^2 + grad_mixrhoy.^2); % compute magnitude needs to be generalized for 3D
-
-    phi = exp(-beta.*(mag_grad_mixrho./const)); % compute schlieren
+    % communicate arrays to matlab client
+    phi = gather(phi);
+    VOF_work = gather(VOF_work);
 
     % generate images
     % needs to be generalized for 3D
@@ -120,6 +136,7 @@ for q=1:nfiles %1:nfiles
     plot_name = fullfile(folder,sprintf('schlieren_%03d.png', q));
     %saveas(new_figure,plot_name)
     exportgraphics(new_figure,plot_name)
+
     close(new_figure);
     % JR ended here
 end
