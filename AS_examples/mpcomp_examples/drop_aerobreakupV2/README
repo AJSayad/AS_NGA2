@@ -1,0 +1,13 @@
+Highspeed drop aerobreakup simulation
+Capable of dimensional and non-dimensional init based on dim_flag
+
+Version 1:
+Updated initialization to include dimensional case
+Updated input file
+Updated drop levelset
+
+Version 2:
+! AS note: the origin (0,0,0) is the 'back-left corner' (from default paraview view x+ right, y+ up, z+ pointing out of screen)
+! AS note: shock location is used both for dim and non-dim cases *BE CAREFUL*
+Updated mesh generation
+Still need a corresponding matlab mesh generation script for post-processing 
