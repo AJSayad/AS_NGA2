@@ -1,0 +1,49 @@
+# Parallelization
+Partition : 2 4 1 
+
+Dimensional flag: true # true for dimensional, false for non-dimensional
+
+# Mesh definition
+Lx : 8
+Ly : 8
+Lz : 8
+nx : 512
+ny : 512
+nz : 1
+X0 :-3
+
+# Adimensional flow parameters
+!---------- EOS ----------
+Gas gamma :         1.3
+Liquid gamma :      6.12
+!--- fluids definition ---
+Density ratio :     815
+Sound speed ratio : 4.3
+!------- inviscid --------
+Shock Mach number : 5.12
+Shock location :    -2
+!------- viscous ---------
+Gas Reynolds number : 1e5
+Viscosity ratio :     58.3
+
+# liquid properties
+Drop diameter: 1
+Drop center:   0 0 0
+Liquid density: 1000
+Liquid Pinf: 3.43e8
+Liquid dynamic viscosity: 5.8e-4
+Liquid specific heat (constant vol): 4130.2 
+
+# gas properties
+Pre-shock density: 1.17
+Pre-shock pressure: 1.01e5
+Gas dynamic viscosity: 1e-5
+Gas specific heat (constant vol): 968.86 # calculated by cv = R_air/(gamm_g-1) from IC, R_air = 290.66 J/(kg*K)
+
+# Time integration
+Max timestep size : 6.5e-6 #7.6e-6 #8.7e-6 #9.8e-6 #5e-3
+Max cfl number :    0.6 #0.7 #0.8 #0.9 #1.0
+Max time :          50
+
+# Ensight output
+Ensight output period : 1e-6 #5e-3 #1e-1

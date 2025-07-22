@@ -1,0 +1,8 @@
+Highspeed drop aerobreakup simulation
+Capable of dimensional and non-dimensional init based on dim_flag
+
+Version 1:
+Updated initialization to include dimensional case
+Updated input file
+Updated drop levelset
+
