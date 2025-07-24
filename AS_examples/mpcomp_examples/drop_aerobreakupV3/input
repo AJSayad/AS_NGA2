@@ -1,0 +1,51 @@
+# Parallelization
+Partition : 2 4 1 
+
+Dimensional flag: true # true for dimensional, false for non-dimensional
+
+# Mesh definition
+CPD: 30     # number of cells per diameter
+D0X: 12     # number of diameter lengths in x
+D0Y: 8      # number of diameter lengths in y
+D0Z: 0      # number of diameter lengths in z (set to 0 for 2D)
+
+# liquid properties
+Drop diameter: 1                            # (dim) assumed 1 for non-dim
+Drop center:   1.1 4 0                        # (dim)
+Liquid density: 1000                        # (dim)
+Liquid Pinf: 3.43e8                         # (dim) 
+Liquid dynamic viscosity: 5.8e-4            # (dim)
+Liquid specific heat (constant vol): 4130.2 # (dim)
+
+# gas properties
+Pre-shock density: 1.17                  # (dim)
+Pre-shock pressure: 1.01e5               # (dim)
+Gas dynamic viscosity: 1e-5              # (dim)
+Gas specific heat (constant vol): 968.86 # (dim) calculated by cv = R_air/(gamm_g-1) from IC, R_air = 290.66 J/(kg*K)
+
+# shock generator
+n_shock       : 3   # number of cells for shock thickening
+Shockgen start: 0.5 # starting location of shockgen shock
+Shockgen end  : 1   # ending locaiton of shockgen shock
+
+# Adimensional flow parameters
+!---------- EOS ----------
+Gas gamma :         1.3    # (both dim and non-dim)
+Liquid gamma :      6.12   # (both dim and non-dim)
+!------- inviscid --------
+Shock Mach number : 5.12   # (both dim and non-dim)
+Shock location :    0.5  # -2     # (both dim and non-dim)
+!--- fluids definition ---
+Density ratio :     815    # (non-dim) ratio of liquid density to pre-shock air density
+Sound speed ratio : 4.3    # (non-dim) liquid sound speed to pre-shock sound speed
+!------- viscous ---------
+Gas Reynolds number : 1e5  # (non-dim)
+Viscosity ratio :     58.3 # (non-dim)
+
+# Time integration
+Max timestep size : 6.5e-6 
+Max cfl number :    0.6 
+Max time :          50
+
+# Ensight output
+Ensight output period : 1e-6 #5e-3 #1e-1

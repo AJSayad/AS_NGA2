@@ -59,7 +59,7 @@ contains
          if (D0Z.gt.0)then
                do k=1,nz+1; z(k) = real(k-1,WP)*dz;end do
             else
-               z(1) = -0.5_WP*dz; z(2) = 0.5_WP*dz ! 2D mesh
+               z(1) = -dz; z(2) = dz ! 2D mesh
          end if
          
          ! General serial grid object
