@@ -1,0 +1,51 @@
+# Parallelization
+Partition : 2 2 1 
+
+Dimensional flag: true  # true for dimensional, false for non-dimensional
+Shock gen flag  : true  # true for numerical shock, false for discontinuity (or Heaviside maybe?)
+Perturbed drop  : false # true for perturbed drop, false for perfect drop (currently only in 2D)
+Inviscid flag   : true  # true for inviscid, false for viscous (NOTE: non-dim setup needs viscosity)
+
+# Mesh definition
+CPD: 25     # number of cells per diameter
+D0X: 4 #12     # number of diameter lengths in x
+D0Y: 4 #8      # number of diameter lengths in y
+D0Z: 0      # number of diameter lengths in z (set to 0 for 2D)
+
+# Shock generator
+Shockgen start: 1    # drop diameter lengths  
+Shockgen end  : 3    # drop diameter lengths
+nshock:         3    # 2*nshock+1 points for numerical shock thickening
+
+# liquid properties
+Drop diameter: 0.00187     # assumed 1 for non-dim
+Drop center:   1.1 2 0     # located in terms of drop diameter lengths
+Liquid density: 1000
+Liquid Pinf: 3.43e8
+Liquid dynamic viscosity: 5.8e-4
+Liquid specific heat (constant vol): 4130.2 
+
+# gas properties
+Shock Mach number : 5.12                 # (both dim and non-dim)
+Shock location :    0.5                  # (both dim and non-dim) drop diameter lengths
+Pre-shock density: 1.17                  # 
+Pre-shock pressure: 1.01e5               # 
+Gas dynamic viscosity: 1e-5              # 
+Gas specific heat (constant vol): 968.86 # calculated by cv = R_air/(gamm_g-1) from IC, R_air = 290.66 J/(kg*K)
+
+# Adimensional flow parameters
+Gas gamma :           1.3    # (both dim and non-dim)
+Liquid gamma :        6.12   # (both dim and non-dim)
+Density ratio :       815    # (non-dim) ratio of liquid density to pre-shock air density
+Sound speed ratio :   4.3    # (non-dim) liquid sound speed to pre-shock sound speed
+Gas Reynolds number : 1e5    # (non-dim)
+Viscosity ratio :     58.3   # (non-dim)
+
+# Time integration
+Max timestep size : 2.12e-8 
+Max cfl number :    0.5
+Max time :          1e-4
+
+# Ensight output
+Ensight output period :     1e-6
+Ensight plic output period: 1e-7

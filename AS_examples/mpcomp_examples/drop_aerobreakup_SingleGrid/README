@@ -1,0 +1,9 @@
+Drop aerobreakup simualtion. Uses the single grid version of mpcomp. Shockgenerator uses spcomp.
+
+Numerically thickened shock through shock generator capable. (can be turned off for a discontinous shock)
+Dimensional and non-dimensional setup capable. (non-dimensional requires viscosity)
+Perturbed water cylinder capable. (currently only in 2D)
+Connected component labeling is done through cclabel_class.f90 under grid/ directory.
+
+Still needs to be implemented:
+---Restart capability
