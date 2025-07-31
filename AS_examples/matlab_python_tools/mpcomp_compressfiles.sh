@@ -18,7 +18,7 @@ tar --zstd -cvf IG.tar.zst IG/
 tar --zstd -cvf IL.tar.zst IL/
 tar --zstd -cvf TG.tar.zst TG/
 tar --zstd -cvf TL.tar.zst TL/
-tar --zstd -cvf Mac.tar.zst Mach/
+tar --zstd -cvf Mach.tar.zst Mach/
 tar --zstd -cvf beta.tar.zst beta/
 tar --zstd -cvf visc.tar.zst visc/
 tar --zstd -cvf sound_speed.zst sound_speed/
