@@ -816,7 +816,7 @@ contains
          ! Increment Q with SL terms
          fs%Q=fs%Q+fs%SLdQ
          ! Apply user-provided relaxation model
-         !call fs%apply_relax()
+         call fs%apply_relax()
          ! Recompute primitive variables
          call fs%get_primitive()
          
