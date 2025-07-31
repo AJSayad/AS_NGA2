@@ -4,7 +4,7 @@ Partition : 2 2 1
 Dimensional flag: true  # true for dimensional, false for non-dimensional
 Shock gen flag  : true  # true for numerical shock, false for discontinuity (or Heaviside maybe?)
 Perturbed drop  : false # true for perturbed drop, false for perfect drop (currently only in 2D)
-Inviscid flag   : true  # true for inviscid, false for viscous (NOTE: non-dim setup needs viscosity)
+Viscous flag    : true  # true for viscous, false for inviscid (NOTE: non-dim setup needs viscosity)
 
 # Mesh definition
 CPD: 25     # number of cells per diameter

@@ -59,7 +59,7 @@ module simulation
    logical :: dim_flag       ! Flag for dimensional or nondimensional init
    logical :: shockgen_flag  ! Flag for running shock generator
    logical :: perturbed_flag ! Flag for using drop perturbation levelset
-   logical :: inviscid_flag  ! Flag for running inviscid
+   logical :: viscous_flag   ! Flag for running viscous
    !logical :: restart_flag   ! Flag for running a restarted simulation 
 contains
    
@@ -294,7 +294,7 @@ contains
       ! read in global flags
       call param_read('Dimensional flag',dim_flag)
       call param_read('Shock gen flag',shockgen_flag)
-      call param_read('Inviscid flag',inviscid_flag)
+      call param_read('Viscous flag',viscous_flag)
       call param_read('Perturbed drop',perturbed_flag)
       ! Initialize eos and flow parameters
       initialize_parameters: block
@@ -347,12 +347,12 @@ contains
             call param_read('Gas specific heat (constant vol)',CvG)
 
             ! Viscous parameters
-            if (inviscid_flag.eqv.(.true.))then
-               viscG = 0.0_WP
-               viscL = 0.0_WP
-            else
+            if (viscous_flag.eqv.(.true.))then
                call param_read('Gas dynamic viscosity',viscG)
                call param_read('Liquid dynamic viscosity',viscL)
+            else
+               viscG = 0.0_WP
+               viscL = 0.0_WP
             end if
             ! Use shock relations (shock fixed frame) to calculate post-shock conditions 
             M1 = Ms ! set M1 equal to shock Mach number for now 
@@ -366,12 +366,12 @@ contains
 
             ! compute some non-dimensional parameters for log files
             rho_ratio=rho2/rho1       ! density ratio
-            if (inviscid_flag.eqv.(.true.))then
-               visc_ratio = 0.0_WP
-               ReG        = 0.0_WP
-            else               
+            if (viscous_flag.eqv.(.true.))then
                visc_ratio=viscL/viscG    ! viscosity ratio
                ReG = rho2*u2*ddrop/viscG ! Reynolds number based on post-shock conditions
+            else               
+               visc_ratio = 0.0_WP
+               ReG        = 0.0_WP
             end if
             c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1) ! sound speed ratio
             ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)
@@ -380,7 +380,7 @@ contains
          if (cfg%amRoot) then
             write(message,'("Dimensional setup  => ",L1)'  ) dim_flag;       call log(message)
             write(message,'("Shock generator  => ",L1)'    ) shockgen_flag;  call log(message)
-            write(message,'("Inviscid sim => ",L1)'        ) inviscid_flag;  call log(message)
+            write(message,'("Viscous sim => ",L1)'         ) viscous_flag;   call log(message)
             write(message,'("Perturbed drop => ",L1)'      ) perturbed_flag; call log(message)
             write(message,'("[Liquid EOS] => Gamma=",es12.5)') GammaL; call log(message)
             write(message,'("[Liquid EOS] =>  Pinf=",es12.5)')  PinfL; call log(message)
@@ -775,7 +775,7 @@ contains
          
          ! Prepare SGS viscosity models
          call fs%get_viscartif(dt=time%dt,beta=beta) ! local artificial diffusivity used for shock stability
-         if(inviscid_flag.eqv.(.false.))then         ! only use vreman model for running viscous sim
+         if(viscous_flag.eqv.(.true.))then           ! only use vreman model for running viscous sim
             call fs%get_vreman   (dt=time%dt,visc=visc)
             mixture_viscosity: block
               integer  :: i,j,k
@@ -816,7 +816,7 @@ contains
          ! Increment Q with SL terms
          fs%Q=fs%Q+fs%SLdQ
          ! Apply user-provided relaxation model
-         call fs%apply_relax()
+         !call fs%apply_relax()
          ! Recompute primitive variables
          call fs%get_primitive()
          

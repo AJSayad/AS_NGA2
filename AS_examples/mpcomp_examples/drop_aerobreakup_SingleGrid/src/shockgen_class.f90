@@ -49,8 +49,8 @@ module shockgen_class
      !> domain partiion
      integer, dimension(3) :: partition
      !> Flags
-     logical :: dim_flag ! Flag for dimensional or nondimensional init
-     logical :: inviscid_flag  ! Flag for running inviscid
+     logical :: dim_flag      ! Flag for dimensional or nondimensional init
+     logical :: viscous_flag  ! Flag for running viscous
    contains
      procedure :: init                            !< Initialize shock-drop simulation
      procedure :: step                            !< Advance shock-drop simulation by one time step
@@ -105,7 +105,7 @@ contains
     real(WP), dimension(:), allocatable :: x,y,z
 
     call param_read('Dimensional flag', this%dim_flag)
-    call param_read('Inviscid flag',this%inviscid_flag)
+    call param_read('Viscous flag',this%viscous_flag)
     call param_read('Drop diameter', this%ddrop) ! usd for mesh generation
     call param_read('CPD', CPD)
     call param_read('D0X',D0X)
@@ -239,10 +239,10 @@ contains
         call param_read('Gas specific heat (constant vol)',CvG)
 
         ! Viscous parameters
-        if (this%inviscid_flag.eqv.(.true.))then
-           this%viscG = 0.0_WP
+        if (this%viscous_flag.eqv.(.true.))then
+           call param_read('Gas dynamic viscosity',this%viscG)  
         else
-           call param_read('Gas dynamic viscosity',this%viscG)        
+           this%viscG = 0.0_WP
         end if
 
         ! Use shock relations (shock fixed frame) to calculate post-shock conditions 
@@ -385,15 +385,13 @@ contains
     this%fs%Qold=this%fs%Q
 
     ! Prepare SGS viscosity models
-    !call this%prepare_viscosities()
     ! Get LAD
-    call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta              )
-    if(this%inviscid_flag.eqv.(.false.))then ! only get vreman model if we're running viscous
+    call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta)
+    if(this%viscous_flag.eqv.(.true.))then ! only get vreman model if we're running viscous
        ! Get eddy viscosity
        call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
     end if
 
-    ! --> we're getting the error from the trhs timer already being started, I'm not sure how to fix it besides commenting out
     ! First RK step ====================================================================================
     ! Get non-SL RHS and increment
     call this%fs%rhs(this%dQdt(:,:,:,:,1))
@@ -470,26 +468,10 @@ contains
        print*, "Pressure profile: ", this%PG_profile
        print*, "Velocity profile: ", this%Ui_profile
     end if
-
-    ! communicate profile arrays to all other processors (0 --> root proc) ! this was moved to simulation.f90
-    ! call MPI_BCAST(this%RHOG_profile,this%nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
-    ! call MPI_BCAST(this%IG_profile  ,this%nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
-    ! call MPI_BCAST(this%PG_profile  ,this%nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
-    ! call MPI_BCAST(this%Ui_profile  ,this%nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
     
     ! Deallocate work arrays
     deallocate(this%dQdt,this%Ui,this%Vi,this%Wi,this%Ma,this%beta,this%visc)
   end subroutine finalize
-
-  !> Calculate viscosities
-  !subroutine prepare_viscosities(this)
-  !  implicit none
-  !  class(sgen), intent(inout) :: this
-  !  ! Get LAD
-  !  call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta              )
-  !  ! Get eddy viscosity
-  !  call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
-  !end subroutine prepare_viscosities
 
   !> Apply boundary conditions
   subroutine apply_bconds(this)
