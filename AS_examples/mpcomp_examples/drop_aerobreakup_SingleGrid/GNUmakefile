@@ -4,7 +4,7 @@ NGA_HOME ?= /home/asayad1/NGA2_all/Repositories/NGA2
 # Compilation parameters
 PRECISION = DOUBLE
 USE_MPI   = TRUE
-USE_HYPRE = TRUE
+USE_HYPRE = FALSE
 USE_LAPACK= TRUE
 USE_IRL   = TRUE
 PROFILE   = FALSE
@@ -24,7 +24,6 @@ VPATH_LOCATIONS   += $(Ulocs)
 
 # External libraries are defined in .profile/.bashrc/.zshrc, but could be defined here as well
 NGA_HOME ?= ${HOME}/NGA2_all/Repositories/NGA2
-HYPRE_DIR  =${HOME}/NGA2_all/Repositories/hypre
 IRL_DIR    = ${HOME}/NGA2_all/Builds/irl
 LAPACK_DIR = ${MKLROOT}/include
 
@@ -32,7 +31,7 @@ LAPACK_DIR = ${MKLROOT}/include
 include $(NGA_HOME)/tools/GNUMake/Make.defs
 
 # Include NGA base code
-Bdirs   := compressible core two_phase data solver config grid libraries
+Bdirs   := core data config grid libraries
 Bpack   += $(foreach dir, $(Bdirs), $(NGA_HOME)/src/$(dir)/Make.package)
 include $(Bpack)
 
