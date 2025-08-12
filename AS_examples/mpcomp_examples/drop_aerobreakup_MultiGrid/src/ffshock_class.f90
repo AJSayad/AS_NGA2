@@ -11,10 +11,14 @@ module ffshock_class
    use partmesh_class,    only: partmesh
    use event_class,       only: event
    use monitor_class,     only: monitor
+   use param,             only: param_read
    implicit none
    private
    
    public :: ffshock
+
+   !> Flags
+   logical :: viscous_flag  ! Flag for running viscous
    
    !> FFshock object
    type :: ffshock
@@ -57,7 +61,6 @@ module ffshock_class
    
 contains
    
-   
    !> Initialization of a far-field shock problem
    subroutine initialize(this,dx,meshsize,startloc,group,partition)
       use mpi_f08, only: MPI_Group
@@ -69,6 +72,8 @@ contains
       type(MPI_Group)       , intent(in) :: group
       integer , dimension(3), intent(in) :: partition
       
+      !> read in necessary flags
+      call param_read('Viscous flag',viscous_flag)
       ! Initialize config object
       create_config: block
          use sgrid_class, only: cartesian,sgrid
@@ -96,7 +101,7 @@ contains
       
       ! Initialize time tracker
       initialize_timetracker: block
-         this%time=timetracker(amRoot=this%cfg%amRoot)
+         this%time=timetracker(amRoot=this%cfg%amRoot,name='ffshock')
       end block initialize_timetracker
       
       ! Create multiphase compressible flow solver
@@ -349,8 +354,10 @@ contains
       class(ffshock), intent(inout) :: this
       ! Get LAD
       call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta              )
-      ! Get eddy viscosity
-      call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
+      if (viscous_flag.eqv.(.true.))then ! viscous case
+         ! Get eddy viscosity
+         call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
+      end if
    end subroutine prepare_viscosities
    
    

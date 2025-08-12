@@ -1,8 +1,8 @@
 # flags
 ! --- Case flags ---    # NOTE: When running dimensionally, we need a more restrictive timestep and CFL (see note from Chase)
 2D flag:          true  # true for a 2D simulation
-Dimensional flag: false # true for dimensional, false for non-dimensional
-Viscous flag    : true  # true for viscous, false for inviscid (NOTE: non-dim setup needs viscosity)
+Dimensional flag: true  # true for dimensional, false for non-dimensional
+Viscous flag    : false # true for viscous, false for inviscid (NOTE: non-dim setup needs viscosity)
 
 # Nondimensional flow parameters
 !--- fluids definition ---
@@ -13,9 +13,9 @@ Gas Reynolds number : 1e5
 Viscosity ratio :     58.3
 
 # Maximum simulation time
-Max time : 30
+Max time : 1e-4
 # Ensight output
-Ensight output period : 5e-6 #0.1
+Ensight output period : 1e-6
 
 # Shock-drop simulation
 ! --- Parallelization ---
@@ -25,8 +25,8 @@ Shock-drop partition : 2 4 1
 Cells per diamter: 100
 
 ! --- Shock ---
-Shock Mach number : 5.12
-Shock location :   -1e-3 #-0.8 # (the physical location of the shock)
+Shock Mach number : 5.298 # slightly higher to match post shock conditions (due to non-constant gamma from experiments)
+Shock location :    -1e-3  # (the physical location of the shock)
 
 ! --- Liquid ---
 Drop diameter: 0.00187
@@ -44,17 +44,17 @@ Gas gamma :         1.3
 Gas specific heat (constant vol): 968.86 # calculated by cv = R_air/(gamm_g-1) from IC, R_air = 290.66 J/(kg*K)
 
 ! --- Time ---
-Shock-drop dt :  2.5e-6 #2.5e-3
-Shock-drop CFL : 0.5 #1
+Shock-drop dt :  3.29e-9
+Shock-drop CFL : 0.5
 ! --- Remeshing ---
-Remeshing period : 1.25e-5 #0.5
+Remeshing period : 1.64e-8 # remesh every 5 timesteps
 
 # Far-field simulation
 ! --- Parallelization ---
-Farfield partition : 8 1 1
+Farfield partition : 8 1 1 
 ! --- Mesh ---
 Mesh spacing ratio: 4 # mesh spacing ratio ff%dx/sd%dx
-X Farfield diameter lengths: 10 # how many drop diameter lengths should the ff domain be (this is the full domain length (includes the X0 length in as well)
+X Farfield diameter lengths: 14 # how many drop diameter lengths should the ff domain be (this is the full domain length (includes the X0 length in as well)
 Y Farfield diameter lengths: 6  # how many drop diameter lengths should the ff domain be
 Z Farfield diameter lengths: 6  # how many drop diameter lengths should the ff domain be
 Farfield X0 : -2                # how many drop diameter lengths should the ff domain be shifted

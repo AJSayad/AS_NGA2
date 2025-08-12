@@ -43,6 +43,13 @@ module simulation
    real(WP) :: rho_ratio,c_ratio
    real(WP) :: rhoL,ML
    real(WP) :: ReG,viscG,viscL,visc_ratio
+   real(WP) :: ddrop
+   real(WP) :: tC2 ! characteristic breakup time scale
+
+   !> Flags
+   logical, public :: dim_flag       ! Flag for dimensional init 
+   logical, public :: viscous_flag   ! Flag for running viscous
+   logical, public :: flag2D         ! Flag for 2D simulation
    
 contains
    
@@ -245,8 +252,14 @@ contains
    
    !> Solver initialization
    subroutine simulation_init
+      use param,    only: param_read
       implicit none
-      
+      ! read in global flags
+      call param_read('2D flag',flag2D)
+      call param_read('Dimensional flag',dim_flag)
+      !call param_read('Shock gen flag',shockgen_flag)
+      call param_read('Viscous flag',viscous_flag)
+      !call param_read('Perturbed drop',perturbed_flag)
       ! Initialize eos and flow parameters - all cores
       initialize_parameters: block
          use string,   only: str_long
@@ -262,34 +275,78 @@ contains
          ! Read in shock Mach number and location
          call param_read('Shock Mach number',Ms)
          call param_read('Shock location',Xs)
-         ! First generate static shock with normalized pre-shock conditions
-         M1=Ms
-         rho1=1.0_WP
-         rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP)
-         p1=0.25_WP*rho1/GammaG*((GammaG+1.0_WP)*M1/(M1**2-1.0_WP))**2 ! Ensures that |u2-u1|=1
-         p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)
-         u1=M1*sqrt(GammaG*p1/rho1)
-         u2=u1*rho1/rho2
-         ! Now shift frame of reference to obtain moving shock
-         u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2); u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)
-         ! Read in density ratio and use it to set liquid density
-         call param_read('Density ratio',rho_ratio); rhoL=rho_ratio*rho1
-         ! Read in liquid Mach number and use it to set PinfL
-         !call param_read('Liquid Mach number',ML)
-         !PinfL=(u2/ML)**2*rhoL/GammaL-p1
-         !c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)
-         ! Read in sound speed ratio and use it to set PinfL
-         call param_read('Sound speed ratio',c_ratio)
-         PinfL=p1*(rho_ratio*c_ratio**2*GammaG/GammaL-1.0_WP)
-         ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)
-         ! Set heat capacities corresponding to a normalized pre-shock and liquid temperature
-         CvL=(p1+PinfL)/(rhoL*(GammaL-1.0_WP))
-         CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
-         ! Viscous parameters
-         call param_read('Gas Reynolds number',ReG); viscG=rho1*1.0_WP*u2/ReG 
-         call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG
+         if (dim_flag.eqv.(.false.)) then ! nondimensional case
+            ! First generate static shock with normalized pre-shock conditions
+            M1=Ms
+            rho1=1.0_WP
+            rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP)
+            p1=0.25_WP*rho1/GammaG*((GammaG+1.0_WP)*M1/(M1**2-1.0_WP))**2 ! Ensures that |u2-u1|=1
+            p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)
+            u1=M1*sqrt(GammaG*p1/rho1)
+            u2=u1*rho1/rho2
+            ! Now shift frame of reference to obtain moving shock
+            u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2); u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)
+            ! Read in density ratio and use it to set liquid density
+            call param_read('Density ratio',rho_ratio); rhoL=rho_ratio*rho1
+            ! Read in sound speed ratio and use it to set PinfL
+            call param_read('Sound speed ratio',c_ratio)
+            PinfL=p1*(rho_ratio*c_ratio**2*GammaG/GammaL-1.0_WP)
+            ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)
+            ! Set heat capacities corresponding to a normalized pre-shock and liquid temperature
+            CvL=(p1+PinfL)/(rhoL*(GammaL-1.0_WP))
+            CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
+            ! Viscous parameters
+            call param_read('Gas Reynolds number',ReG); viscG=rho1*1.0_WP*u2/ReG 
+            call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG
+            ! compute characteristic breakup time scale
+            tC2 = (1.0_WP/u2)*sqrt(rhoL/rho2)
+         else ! dimensional case 
+            ! Read in Liquid variables
+            call param_read('Drop diameter',ddrop)
+            call param_read('Liquid Pinf',PinfL)
+            call param_read('Liquid density',rhoL)
+            call param_read('Liquid specific heat (constant vol)',CvL)
+            ! Read in Gas variables
+            call param_read('Pre-shock density',rho1)
+            call param_read('Pre-shock pressure',p1)
+            call param_read('Gas specific heat (constant vol)',CvG)
+            ! Viscous parameters
+            if (viscous_flag.eqv.(.true.))then ! viscous case
+               call param_read('Gas dynamic viscosity',viscG)
+               call param_read('Liquid dynamic viscosity',viscL)
+            else ! inviscid case
+               viscG = 0.0_WP
+               viscL = 0.0_WP
+            end if
+            ! Use shock relations (shock fixed frame) to calculate post-shock conditions 
+            M1 = Ms                                                        ! set M1 equal to shock Mach number for now 
+            rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP) ! post shock density  (Anderson 3.53)
+            p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)    ! post shock pressure (Anderson 3.57)
+            u1=M1*sqrt(GammaG*p1/rho1)                                     ! velocity in state 1 (left side of shock in fixed frame)
+            u2=u1*rho1/rho2                                                ! velocity in state 2 (Anderson 3.53, right side of shock in fixed frame)
+            ! we now shift to accomodate a moving shock (converting from shock fixed frame to lab frame)
+            u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2)                      ! post-shock gas velocity and post shock Mach number
+            u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)                          ! set pre-shock gas velocity to zero and update pre-shock Mach number
+            ! compute some non-dimensional parameters for log files
+            rho_ratio=rho2/rho1          ! density ratio
+            if (viscous_flag.eqv.(.true.))then
+               visc_ratio=viscL/viscG    ! viscosity ratio
+               ReG = rho2*u2*ddrop/viscG ! Reynolds number based on post-shock conditions
+            else               
+               visc_ratio = 0.0_WP
+               ReG        = 0.0_WP
+            end if
+            c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1) ! sound speed ratio
+            ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)
+            ! compute characteristic breakup time scale
+            tC2 = (ddrop/u2)*sqrt(rhoL/rho2)
+         end if
          ! Output case info
          if (amRoot) then
+            write(message,'("Dimensional setup  => ",L1)'  ) dim_flag;       call log(message)
+            !write(message,'("Shock generator  => ",L1)'    ) shockgen_flag;  call log(message)
+            write(message,'("Viscous sim => ",L1)'         ) viscous_flag;   call log(message)
+            !write(message,'("Perturbed drop => ",L1)'      ) perturbed_flag; call log(message)
             write(message,'("[Liquid EOS] => Gamma=",es12.5)') GammaL; call log(message)
             write(message,'("[Liquid EOS] =>  Pinf=",es12.5)')  PinfL; call log(message)
             write(message,'("[Liquid EOS] =>    Cv=",es12.5)')    CvL; call log(message)
@@ -308,6 +365,8 @@ contains
             write(message,'("[Density ratio]      => rhoL/rho1=",es12.5)') rho_ratio; call log(message)
             write(message,'("[Sound speed ratio]  =>     cl/c1=",es12.5)')   c_ratio; call log(message)
             write(message,'("[Gas Reynolds]     =>     ReG=",es12.5)')        ReG; call log(message)
+            ! add Weber number after surface tension is added
+            write(message,'("[Characteristic breakup time]     =>  tC2=",es12.5)') tC2; call log(message)
             write(message,'("[Viscosity ratio]  => muL/muG=",es12.5)') visc_ratio; call log(message)
             write(message,'("[Gas    viscosity] =>     muG=",es12.5)')      viscG; call log(message)
             write(message,'("[Liquid viscosity] =>     muL=",es12.5)')      viscL; call log(message)
@@ -319,7 +378,7 @@ contains
          use parallel, only: amRoot
          use param,    only: param_read
          ! Create time tracker object
-         time=timetracker(amRoot=amRoot)
+         time=timetracker(amRoot=amRoot,name='simulation')
          ! Set time integration parameters
          call param_read('Shock-drop dt',time%dtmax); time%dt=time%dtmax
          call param_read('Shock-drop CFL',time%cflmax)
@@ -333,14 +392,22 @@ contains
          real(WP), dimension(3) :: X0
          integer , dimension(3) :: meshsize,partition
          real(WP) :: dx
-         ! Read in mesh size and desired partition
-         call param_read('Shock-drop dx',dx)
-         call param_read('Shock-drop max nx',max_nx,default=0)
-         call param_read('Shock-drop max ny',max_ny,default=0)
-         call param_read('Shock-drop max nz',max_nz,default=0)
+         integer  :: CPD
+         call param_read('Cells per diamter',CPD)
          call param_read('Shock-drop partition',partition)
-         ! Set initial domain of size (2D)^3 centered on (0,0,0)
-         meshsize=min(nint([2.0_WP/dx,2.0_WP/dx,2.0_WP/dx]),merge([max_nx,max_ny,max_nz],huge(1),[max_nx,max_ny,max_nz].gt.0))
+         if (dim_flag.eqv.(.true.))then
+            call param_read('Drop diameter',ddrop) ! dimensional case
+         else
+            ddrop=1.0_WP                           ! nondimensional case
+         end if
+         ! calculate dx
+         dx=ddrop/real(CPD,WP) ! mesh size
+         ! Set initial domain of size (2ddrop)^3 centered on (0,0,0)
+         ! compute # of cells, assume an sd domain length of 2*ddrop in each direction
+         meshsize=nint([2.0_WP*ddrop/dx,2.0_WP*ddrop/dx,2.0_WP*ddrop/dx])
+         if(flag2D.eqv.(.true.)) then
+            meshsize=[meshsize(1),meshsize(2),1] ! 2D case
+         end if
          X0=-0.5_WP*real(meshsize,WP)*dx
          ! Allocate and initialize the shock-drop solver
          allocate(sd); call sd%initialize(dx=dx,meshsize=meshsize,startloc=X0,group=group,partition=partition,continue_monitor=.false.)
@@ -409,13 +476,21 @@ contains
          use parallel, only: group
          integer , dimension(3) :: meshsize,partition
          real(WP), dimension(3) :: X0
-         real(WP) :: dx
-         ! Read in mesh size and desired partition
-         call param_read('Farfield dx',dx)
-         call param_read('Farfield nx',meshsize)
+         real(WP) :: dx,dx_ratio,Lx,Xdlengths,Ydlengths,Zdlengths
          call param_read('Farfield partition',partition)
+         call param_read('Mesh spacing ratio',dx_ratio) ! this ratio is ff%dx/sd%dx
+         dx=dx_ratio*sd%fs%dx
+         call param_read('X Farfield diameter lengths',Xdlengths)
+         call param_read('Y Farfield diameter lengths',Ydlengths)
+         call param_read('Z Farfield diameter lengths',Zdlengths) ! 3D case
+         ! compute # of cells, assume an ff domain length of in each direction
+         meshsize=nint([Xdlengths*ddrop/dx,Ydlengths*ddrop/dx,Zdlengths*ddrop/dx])
+         if(flag2D.eqv.(.true.)) then
+            meshsize=[meshsize(1),meshsize(2),1] ! 2D case
+         end if
          X0=-0.5_WP*real(meshsize,WP)*dx      !< This assumes that the domain is centered on (0,0,0)
          call param_read('Farfield X0',X0(1)) !< This shifts the domain in x based on user input
+         X0(1) = X0(1)*ddrop ! normalize by drop diameter 
          ! Initialize the farfield solver
          call ff%initialize(dx=dx,meshsize=meshsize,startloc=X0,group=group,partition=partition)
          ! Provide thermodynamic model
@@ -484,7 +559,11 @@ contains
          real(WP), dimension(3),intent(in) :: xyz
          real(WP), intent(in) :: t
          real(WP) :: G
-         G=0.5_WP-sqrt(sum(xyz**2))
+         if (dim_flag.eqv.(.false.))then ! nondimensional case
+            G=0.5_WP-sqrt(sum(xyz**2))
+         else ! dimensional case
+            G = 1.0_WP - sqrt((xyz(1))**2 + (xyz(2))**2 + (xyz(3))**2)/(ddrop/2.0_WP)
+         end if
       end function levelset_drop
    end subroutine simulation_init
    

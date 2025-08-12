@@ -11,10 +11,14 @@ module shockdrop_class
    use cclabel_class,     only: cclabel
    use event_class,       only: event
    use monitor_class,     only: monitor
+   use param,             only: param_read
    implicit none
    private
    
    public :: shockdrop
+
+   !> Flags
+   logical :: viscous_flag  ! Flag for running viscous
    
    !> Shockdrop object
    type :: shockdrop
@@ -129,6 +133,9 @@ contains
       logical , optional    , intent(in) :: continue_monitor
       logical :: monitor_continue
       
+      !> read in necessary flags
+      call param_read('Viscous flag',viscous_flag)
+      
       ! Check if this shockdrop is a continuation, coming from remeshing
       is_monitor_continued: block
          monitor_continue=.false.; if (present(continue_monitor)) monitor_continue=continue_monitor
@@ -161,7 +168,7 @@ contains
       
       ! Initialize time tracker
       initialize_timetracker: block
-         this%time=timetracker(amRoot=this%cfg%amRoot)
+         this%time=timetracker(amRoot=this%cfg%amRoot,name='shockdrop')
       end block initialize_timetracker
       
       ! Create multiphase compressible flow solver
@@ -439,20 +446,22 @@ contains
       integer :: i,j,k
       ! Get LAD
       call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta)
-      ! Get eddy viscosity
-      call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc)
-      ! Create mixture viscosities
-      do k=this%fs%cfg%kmino_+1,this%fs%cfg%kmaxo_-1; do j=this%fs%cfg%jmino_+1,this%fs%cfg%jmaxo_-1; do i=this%fs%cfg%imino_+1,this%fs%cfg%imaxo_-1
-         ! Create smooth mass info distribution
-         Lvof=sum(       this%fs%VF(i-1:i+1,j-1:j+1,k-1:k+1)  )
-         Gvof=sum(1.0_WP-this%fs%VF(i-1:i+1,j-1:j+1,k-1:k+1)  )
-         Lrho=sum(       this%fs%Q (i-1:i+1,j-1:j+1,k-1:k+1,1))/(Lvof+eps)
-         Grho=sum(       this%fs%Q (i-1:i+1,j-1:j+1,k-1:k+1,2))/(Gvof+eps)
-         ! Harmonic average of VISC
-         Lvisc=Lrho*(this%cst_viscL+this%visc(i,j,k)); Gvisc=Grho*(this%cst_viscG+this%visc(i,j,k)); this%fs%VISC(i,j,k)=(Lvof+Gvof)/(Lvof/max(Lvisc,eps)+Gvof/max(Gvisc,eps))
-         ! Harmonic average of BETA
-         Lbeta=Lrho*this%beta(i,j,k); Gbeta=Grho*this%beta(i,j,k); this%fs%BETA(i,j,k)=(Lvof+Gvof)/(Lvof/max(Lbeta,eps)+Gvof/max(Gbeta,eps))
-      end do; end do; end do
+      if(viscous_flag.eqv.(.true.))then ! viscous case
+         ! Get eddy viscosity 
+         call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc)
+         ! Create mixture viscosities
+         do k=this%fs%cfg%kmino_+1,this%fs%cfg%kmaxo_-1; do j=this%fs%cfg%jmino_+1,this%fs%cfg%jmaxo_-1; do i=this%fs%cfg%imino_+1,this%fs%cfg%imaxo_-1
+            ! Create smooth mass info distribution
+            Lvof=sum(       this%fs%VF(i-1:i+1,j-1:j+1,k-1:k+1)  )
+            Gvof=sum(1.0_WP-this%fs%VF(i-1:i+1,j-1:j+1,k-1:k+1)  )
+            Lrho=sum(       this%fs%Q (i-1:i+1,j-1:j+1,k-1:k+1,1))/(Lvof+eps)
+            Grho=sum(       this%fs%Q (i-1:i+1,j-1:j+1,k-1:k+1,2))/(Gvof+eps)
+            ! Harmonic average of VISC
+            Lvisc=Lrho*(this%cst_viscL+this%visc(i,j,k)); Gvisc=Grho*(this%cst_viscG+this%visc(i,j,k)); this%fs%VISC(i,j,k)=(Lvof+Gvof)/(Lvof/max(Lvisc,eps)+Gvof/max(Gvisc,eps))
+            ! Harmonic average of BETA
+            Lbeta=Lrho*this%beta(i,j,k); Gbeta=Grho*this%beta(i,j,k); this%fs%BETA(i,j,k)=(Lvof+Gvof)/(Lvof/max(Lbeta,eps)+Gvof/max(Gbeta,eps))
+         end do; end do; end do
+      end if   
    end subroutine prepare_viscosities
    
    
