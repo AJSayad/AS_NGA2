@@ -1,0 +1,29 @@
+AS notes on multigrid version
+
+===== Shock Drop Simulation =====
+1. Mesh generated in shockdrop_class.f90 (takes arguments passed from sim.f90)
+2. Supporting subroutines are set up in shockdrop_class.f90 (step, postpro, ensight, monitor, etc.)
+3. IC's are set in simulation.f90
+4. The actual shock drop simulation is run in simulation.f90 by calling sd%step
+
+===== Farfield Shock Simulation =====
+1. Mesh is generated under ffshock_class.f90, it is essentially the same as the shock drop mesh geenration except for the remeshing
+2. LPT solver is initialized under ffshock_class.f90
+3. IC's are set in simulation.f90
+
+
+===== Shock generator Simulation =====
+1. Needs to be implemented 
+
+
+
+===== Driver: simulation.f90 =====
+1. EOS funcitons and relaxation subroutines are defined here
+2. We perform our normal shock calculations here as well
+3. Couplers for sd to ff and ff to sd are set here
+4. We initialize ensight output here
+5. We initialize our dynamic remeshing here (we define a period to determine how often to remesh)
+6. Our level set functions are defined here
+7. Finally, this is where we run the simulations
+8. Subroutines/functions for remeshing, coupling meshes, and transfering drops is towards the end of simulation.f90 
+
