@@ -529,28 +529,19 @@ contains
            
            ! now find the shock in sd and set the profiles
            call find_shock(shock_index,Xs,sd%cfg%dx(1),sd%cfg%x(sd%cfg%imin:sd%cfg%imax),sd%cfg%imin,sd%cfg%imax)
-           if(amRoot)then
-               print*, "=== shock generator for shock-drop simulation ==="
-               print*, "Shock index: ", shock_index
-               print*, "nshock: ", nshock
-               print*, "2*nshock+1: ", 2*nshock+1
-               print*, "Xs: ", Xs
-               print*, "sd%cfg%x(shock_index): ", sd%cfg%x(shock_index)
-               !print *, 'LBOUND(x) = ', lbound(sd%cfg%x), 'UBOUND(x) = ', ubound(sd%cfg%x)
-               !print*, "size profile arrays: ", size(RHOG_profile), size(IG_profile), size(PG_profile), size(Ui_profile)
-               print*, "=== END shock generator for shock-drop simulation ==="
-           end if 
-           !print*, "sd%cfg%imino_: ", sd%cfg%imino_
-           !print*, "sd%cfg%imaxo_: ", sd%cfg%imaxo_
+         !   if(amRoot)then
+         !       print*, "=== shock generator for shock-drop simulation ==="
+         !       print*, "Shock index: ", shock_index
+         !       print*, "nshock: ", nshock
+         !       print*, "2*nshock+1: ", 2*nshock+1
+         !       print*, "Xs: ", Xs
+         !       print*, "sd%cfg%x(shock_index): ", sd%cfg%x(shock_index)
+         !       print *, 'LBOUND(x) = ', lbound(sd%cfg%x), 'UBOUND(x) = ', ubound(sd%cfg%x)
+         !       !print*, "size profile arrays: ", size(RHOG_profile), size(IG_profile), size(PG_profile), size(Ui_profile)
+         !       print*, "=== END shock generator for shock-drop simulation ==="
+         !   end if 
            call update_shockprofile(sd%fs%Q(sd%cfg%imino_:sd%cfg%imaxo_,:,:,:),q,sd%fs%PG(sd%cfg%imino_:sd%cfg%imaxo_,:,:),sd%fs%IG(sd%cfg%imino_:sd%cfg%imaxo_,:,:),sd%Ui(sd%cfg%imino_:sd%cfg%imaxo_,:,:),RHOG_profile,PG_profile,IG_profile,Ui_profile,sd%cfg%imino_,sd%cfg%imaxo_,nshock,shock_index) 
-         !   if(amRoot)then ! these values look good here, PG and IG get shifted somwhere down below
-         !       print*, "rhog = ", sd%fs%Q(:,1,1,2)
-         !       print*, "pg = ", sd%fs%PG(:,1,1)
-         !       print*, "ig = ", sd%fs%IG(:,1,1)
-         !       print*, "ui = ", sd%Ui(:,1,1)
-         !    end if  
            ! rebuild conserved quantites
-           ! Build PLIC interface
            call sd%fs%build_interface()
            ! Initialize conserved variables
            sd%fs%Q(:,:,:,1)=        sd%fs%VF *sd%fs%RHOL
@@ -564,14 +555,6 @@ contains
            call sd%fs%get_primitive() 
            ! Interpolate velocity
            call sd%fs%interp_vel(sd%Ui,sd%Vi,sd%Wi)
-           ! our PG and IG still do not line up correctly for some reason? Our velocity and density look good now though
-            ! if(amRoot)then ! the PG and IG values are shifted here, but ui and rhog are correct
-            !    print*, "rhog = ", sd%fs%Q(:,1,1,2)
-            !    print*, "pg = ", sd%fs%PG(:,1,1)
-            !    print*, "ig = ", sd%fs%IG(:,1,1)
-            !    print*, "ui = ", sd%Ui(:,1,1)
-            ! end if  
-
            ! deallocate vars
            deallocate(RHOG_profile,IG_profile,PG_profile,Ui_profile) 
          end block sd_shockgen
@@ -649,6 +632,13 @@ contains
            ! create shockgen group
            call MPI_COMM_RANK(MPI_COMM_WORLD,rank,ierr)
            call MPI_GROUP_INCL(ff%cfg%group,1,0,sgen_group,ierr) ! create sgen group
+         !   if(amRoot)then
+         !       print*, "=== TEST ==="
+         !       print*, "Rhog profile: ", RHOG_profile
+         !       print*, "Pg profile: ", PG_profile
+         !       print*, "Ig profile: ", IG_profile
+         !       print*, "Ui profile: ", Ui_profile
+         !    end if
 
            ! Read in mesh size and desired partition
            call param_read('Farfield dx',dx)
@@ -671,24 +661,22 @@ contains
            call MPI_BCAST(IG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
            call MPI_BCAST(PG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
            call MPI_BCAST(Ui_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)            
-
            call find_shock(shock_index,Xs,ff%cfg%dx(1),ff%cfg%x(ff%cfg%imin:ff%cfg%imax),ff%cfg%imin,ff%cfg%imax)
+           print*, "SHOCK INDEX: ", shock_index
             if(amRoot)then
                 print*, "=== Shock generator for far-field simulation ==="
-                print *, 'LBOUND(x) = ', lbound(ff%cfg%x), 'UBOUND(x) = ', ubound(ff%cfg%x)
-                print*, "ff%cfg%imin: ", ff%cfg%imin
-                print*, "ff%cfg%imax: ", ff%cfg%imax
+                !print *, 'LBOUND(x) = ', lbound(ff%cfg%x), 'UBOUND(x) = ', ubound(ff%cfg%x)
+                !print*, "ff%cfg%imin: ", ff%cfg%imin
+                !print*, "ff%cfg%imax: ", ff%cfg%imax
                 print*, "shock index: ", shock_index
                 print*, "x(shock_index): ", ff%cfg%x(shock_index)
-         !       !do i=ff%cfg%imino,ff%cfg%imaxo
-         !       !   print*, "i:", i, "x(i):", ff%cfg%x(i)
-         !       !end do
-         !       print*, "RHOG profile: ", RHOG_profile
-         !       print*, "IG profile: ", IG_profile
-         !       print*, "PG profile: ", PG_profile
-         !       print*, "Ui profile: ", Ui_profile
+                print*, "Rhog profile: ", RHOG_profile
+                print*, "Pg profile: ", PG_profile
+                print*, "Ig profile: ", IG_profile
+                print*, "Ui profile: ", Ui_profile
                 print*, "=== End of shock generator for far-field simulation ==="
             end if
+            print*, "My imino_ is: ", ff%cfg%imino_, " and my imaxo_ is: ", ff%cfg%imaxo_
            call update_shockprofile(ff%fs%Q(ff%cfg%imino_:ff%cfg%imaxo_,:,:,:),q,ff%fs%P(ff%cfg%imino_:ff%cfg%imaxo_,:,:),ff%fs%I(ff%cfg%imino_:ff%cfg%imaxo_,:,:),ff%Ui(ff%cfg%imino_:ff%cfg%imaxo_,:,:),RHOG_profile,PG_profile,IG_profile,Ui_profile,ff%cfg%imino_,ff%cfg%imaxo_,nshock,shock_index)  
            ! rebuild conserved quantites
            ! Initialize conserved variables
@@ -916,13 +904,13 @@ contains
          end if
       end do
       if(amRoot)then
-         print*, " === find_shock subroutine ==="
-         print *, 'LBOUND(x) = ', lbound(x), 'UBOUND(x) = ', ubound(x)
-         print*, "imin: ", imin
-         print*, "imax: ", imax
-         print*, "Shock index: ", shock_index
-         print*, "Shock index location (cell edge): ", x(shock_index)
-         print*, "=============================="
+          print*, " === find_shock subroutine ==="
+      !    print *, 'LBOUND(x) = ', lbound(x), 'UBOUND(x) = ', ubound(x)
+      !    print*, "imin: ", imin
+      !    print*, "imax: ", imax
+          print*, "Shock index: ", shock_index
+          print*, "Shock index location (cell edge): ", x(shock_index)
+          print*, "=============================="
       end if
    end subroutine find_shock
 
@@ -936,36 +924,36 @@ contains
       real(WP), dimension(:,:,:)  , intent(inout) :: pg,ig,ui
       if(amRoot)then
          print*, "=== Update shock subroutine ==="
-         print*, "Shock index: ", shock_index
-         print*, "nshock: ", nshock
-         print*, "2*nshock+1: ", 2*nshock+1
-         print*, "Xs: ", Xs
-         print*, "size profile arrays: ", size(RHOG_profile), size(IG_profile), size(PG_profile), size(Ui_profile)
-         print*, "=== END Update shock subroutine ==="
-      end if 
-      !print*, "imin: ", imin
-      !print*, "imax: ", imax
+         !print*, "rhog_profile: ", rhog_profile
+         !print*, "pg_profile: ", pg_profile
+         !print*, "ig_profile: ", ig_profile
+         !print*, "ui_profile: ", ui_profile
+      !    print*, "Shock index: ", shock_index
+      !    print*, "nshock: ", nshock
+      !    print*, "2*nshock+1: ", 2*nshock+1
+      !    print*, "Xs: ", Xs
+      !    print*, "size profile arrays: ", size(RHOG_profile), size(IG_profile), size(PG_profile), size(Ui_profile)
+          print*, "=== END Update shock subroutine ==="
+       end if 
       do i = imin,imax
          !if(amRoot)then
          !   print*, "i: ", i
          !end if   
          if ((i.ge.shock_index - nshock).and.(i.le. shock_index + nshock)) then
-            rhog(i,:,:,q) = rhog_profile(i - (shock_index - nshock) + 1); !if(amRoot)then; print*, "rhog: ", rhog(i,1,1,q); end if ! set density
-            pg  (i,:,:)   = pg_profile  (i - (shock_index - nshock) + 1); if(amRoot)then; print*, "index: ",i; print*, "pg: ", pg(i,1,1); end if ! set pressure
-            ! maybe try updaing IG with EOS 
-            !sd%fs%IG  (i,j,k)=(sd%fs%PG(i,j,k)+GammaG*PinfG)/(sd%fs%RHOG(i,j,k)*(GammaG-1.0_WP))            
-            !ig (i,:,:) = (pg(i,:,:)+GammaG*PinfG)/(rhog(i,:,:,q)*(GammaG-1.0_WP))
-            ! when I comment out the following line, the ig values are off by one fine cell but the pg,rhog, and ui values are correct
-            ig  (i,:,:)   = ig_profile  (i - (shock_index - nshock) + 1); if(amRoot)then; print*, "ig: ", ig(i,1,1); end if ! set internal energy
-            ui  (i,:,:)   = ui_profile  (i - (shock_index - nshock) + 1); !if(amRoot)then; print*, "ui: ", ui(i,1,1); end if ! set cell centered velocity
+            rhog(i,:,:,q) = rhog_profile(i - (shock_index - nshock) + 1)
+            pg  (i,:,:)   = pg_profile  (i - (shock_index - nshock) + 1)
+            ig  (i,:,:)   = ig_profile  (i - (shock_index - nshock) + 1)
+            ui  (i,:,:)   = ui_profile  (i - (shock_index - nshock) + 1)
          end if         
       end do
-      ! if(amRoot)then ! --> after plotting this in matlab, I'm very certain that this subroutine is working, something else must be changing the values
-      !    print*, "rhog = ", rhog(:,1,1,q)
-      !    print*, "pg = ", pg(:,1,1)
-      !    print*, "ig = ", ig(:,1,1)
-      !    print*, "ui = ", ui(:,1,1)
-      ! end if   
+      !if(amRoot)then
+      !   print*, "=== Update shock subroutine ==="
+      !   print*, "rhog = ", rhog(:,1,1,q)
+      !   print*, "pg = ", pg(:,1,1)
+      !   print*, "ig = ", ig(:,1,1)
+      !   print*, "ui = ", ui(:,1,1)
+      !   print*, "=== END Update shock subroutine ==="
+      !end if  
    end subroutine update_shockprofile
    
    !> Remesh sd to follow the drop
