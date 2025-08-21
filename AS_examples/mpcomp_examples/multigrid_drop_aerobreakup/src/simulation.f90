@@ -626,84 +626,84 @@ contains
          call ff%output_monitor()
       end block initialize_ff
 
-      ! if (sgenflag.eqv.(.true.))then
-      !    !> setup shock generator for farfield mesh
-      !    ff_shockgen: block
-      !      use param,    only: param_read
-      !      use parallel, only: group,amRoot
-      !      use mpi_f08,  only: MPI_GROUP,MPI_COMM_WORLD,MPI_DOUBLE_PRECISION
-      !      real(WP), dimension(3) :: X0
-      !      integer , dimension(3) :: meshsize,sgen_partition
-      !      integer :: i,j,k,ierr,rank,nshock,shock_index
-      !      integer  :: q=1 ! this is a temporary fix for now (mpcomp RHOG is Q(i,j,k,2) but spmcomp RHO is Q(i,j,k,1)) used in update_shockprofile           
-      !      real(WP) :: dx,Xend
-      !      type(MPI_GROUP) :: sgen_group
-      !      real(WP), dimension(:), allocatable :: RHOG_profile,IG_profile,PG_profile,Ui_profile ! shock profile arrays
-      !      ! set number of points for shock profile (left and right of center total pts = 2*nshock+1)
-      !      ! use a smaller number of points so that the physical thickness between the meshes is the same
-      !      call param_read('nshock',nshock,default=4) ! how many points should we use for the coarse mesh? They should line up with the fine mesh
-      !      ! allocate shock profile arrays
-      !      allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),Ui_profile(2*nshock+1))
-      !      RHOG_profile = 0.0_WP; PG_profile = 0.0_WP; IG_profile = 0.0_WP; Ui_profile = 0.0_WP
+      if (sgenflag.eqv.(.true.))then
+         !> setup shock generator for farfield mesh
+         ff_shockgen: block
+           use param,    only: param_read
+           use parallel, only: group,amRoot
+           use mpi_f08,  only: MPI_GROUP,MPI_COMM_WORLD,MPI_DOUBLE_PRECISION
+           real(WP), dimension(3) :: X0
+           integer , dimension(3) :: meshsize,sgen_partition
+           integer :: i,j,k,ierr,rank,nshock,shock_index
+           integer  :: q=1 ! this is a temporary fix for now (mpcomp RHOG is Q(i,j,k,2) but spmcomp RHO is Q(i,j,k,1)) used in update_shockprofile           
+           real(WP) :: dx,Xend
+           type(MPI_GROUP) :: sgen_group
+           real(WP), dimension(:), allocatable :: RHOG_profile,IG_profile,PG_profile,Ui_profile ! shock profile arrays
+           ! set number of points for shock profile (left and right of center total pts = 2*nshock+1)
+           ! use a smaller number of points so that the physical thickness between the meshes is the same
+           call param_read('nshock',nshock,default=4) ! how many points should we use for the coarse mesh? They should line up with the fine mesh
+           ! allocate shock profile arrays
+           allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),Ui_profile(2*nshock+1))
+           RHOG_profile = 0.0_WP; PG_profile = 0.0_WP; IG_profile = 0.0_WP; Ui_profile = 0.0_WP
 
-      !      ! create shockgen group
-      !      call MPI_COMM_RANK(MPI_COMM_WORLD,rank,ierr)
-      !      call MPI_GROUP_INCL(ff%cfg%group,1,0,sgen_group,ierr) ! create sgen group
+           ! create shockgen group
+           call MPI_COMM_RANK(MPI_COMM_WORLD,rank,ierr)
+           call MPI_GROUP_INCL(ff%cfg%group,1,0,sgen_group,ierr) ! create sgen group
 
-      !      ! Read in mesh size and desired partition
-      !      call param_read('Farfield dx',dx)
-      !      call param_read('Farfield nx',meshsize)
-      !      X0=-0.5_WP*real(meshsize,WP)*dx       !< This assumes that the domain is centered on (0,0,0)
-      !      call param_read('Farfield X0',X0(1))  !< This shifts the domain in x based on user input
-      !      Xend = 1.0_WP + Xs ! let the shock travel 1 diameter
-      !      if(amRoot)then ! setup and run sg only on root proc
-      !         ! testing 
-      !         call sgen_init(dx,meshsize,X0,sgen_group,viscG,Xs,Xend,ushock)
-      !         !> run shock gen simulation
-      !         do while (.not.sg%time%done()) ! looks like everything here is running fine 
-      !            call sg%step()
-      !         end do
-      !         call sg%finalize(nshock,Xend,RHOG_profile,IG_profile,PG_profile,Ui_profile) 
-      !      end if ! amRoot
+           ! Read in mesh size and desired partition
+           call param_read('Farfield dx',dx)
+           call param_read('Farfield nx',meshsize)
+           X0=-0.5_WP*real(meshsize,WP)*dx       !< This assumes that the domain is centered on (0,0,0)
+           call param_read('Farfield X0',X0(1))  !< This shifts the domain in x based on user input
+           Xend = 1.0_WP + Xs ! let the shock travel 1 diameter
+           if(amRoot)then ! setup and run sg only on root proc
+              ! testing 
+              call sgen_init(dx,meshsize,X0,sgen_group,viscG,Xs,Xend,ushock)
+              !> run shock gen simulation
+              do while (.not.sg%time%done()) ! looks like everything here is running fine 
+                 call sg%step()
+              end do
+              call sg%finalize(nshock,Xend,RHOG_profile,IG_profile,PG_profile,Ui_profile) 
+           end if ! amRoot
            
-      !      ! broadcast shock profile arrays to all procs
-      !      call MPI_BCAST(RHOG_profile,2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr) ! these calls are working in parallel
-      !      call MPI_BCAST(IG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
-      !      call MPI_BCAST(PG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
-      !      call MPI_BCAST(Ui_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)            
+           ! broadcast shock profile arrays to all procs
+           call MPI_BCAST(RHOG_profile,2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr) ! these calls are working in parallel
+           call MPI_BCAST(IG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+           call MPI_BCAST(PG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+           call MPI_BCAST(Ui_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)            
 
-      !      call find_shock(shock_index,Xs,ff%cfg%dx(1),ff%cfg%x(ff%cfg%imin:ff%cfg%imax),ff%cfg%imin,ff%cfg%imax)
-      !       if(amRoot)then
-      !           print*, "=== Shock generator for far-field simulation ==="
-      !           print *, 'LBOUND(x) = ', lbound(ff%cfg%x), 'UBOUND(x) = ', ubound(ff%cfg%x)
-      !           print*, "ff%cfg%imin: ", ff%cfg%imin
-      !           print*, "ff%cfg%imax: ", ff%cfg%imax
-      !           print*, "shock index: ", shock_index
-      !           print*, "x(shock_index): ", ff%cfg%x(shock_index)
-      !    !       !do i=ff%cfg%imino,ff%cfg%imaxo
-      !    !       !   print*, "i:", i, "x(i):", ff%cfg%x(i)
-      !    !       !end do
-      !    !       print*, "RHOG profile: ", RHOG_profile
-      !    !       print*, "IG profile: ", IG_profile
-      !    !       print*, "PG profile: ", PG_profile
-      !    !       print*, "Ui profile: ", Ui_profile
-      !           print*, "=== End of shock generator for far-field simulation ==="
-      !       end if
-      !      call update_shockprofile(ff%fs%Q(ff%cfg%imino_:ff%cfg%imaxo_,:,:,:),q,ff%fs%P(ff%cfg%imino_:ff%cfg%imaxo_,:,:),ff%fs%I(ff%cfg%imino_:ff%cfg%imaxo_,:,:),ff%Ui(ff%cfg%imino_:ff%cfg%imaxo_,:,:),RHOG_profile,PG_profile,IG_profile,Ui_profile,ff%cfg%imino_,ff%cfg%imaxo_,nshock,shock_index)  
-      !      ! rebuild conserved quantites
-      !      ! Initialize conserved variables
-      !      ff%fs%Q(:,:,:,2)=ff%fs%Q(:,:,:,1)*ff%fs%I
-      !      call ff%fs%get_momentum()
-      !      ! Rebuild primitive variables
-      !      call ff%fs%get_primitive()
-      !      ! Interpolate velocity
-      !      call ff%fs%interp_vel(ff%Ui,ff%Vi,ff%Wi)
-      !      ! Compute local Mach number
-      !      ff%Ma=sqrt(ff%Ui**2+ff%Vi**2+ff%Wi**2)/ff%fs%C
-      !      ! deallocate vars
-      !      deallocate(RHOG_profile,IG_profile,PG_profile,Ui_profile) 
-      !    end block ff_shockgen
-      ! end if
+           call find_shock(shock_index,Xs,ff%cfg%dx(1),ff%cfg%x(ff%cfg%imin:ff%cfg%imax),ff%cfg%imin,ff%cfg%imax)
+            if(amRoot)then
+                print*, "=== Shock generator for far-field simulation ==="
+                print *, 'LBOUND(x) = ', lbound(ff%cfg%x), 'UBOUND(x) = ', ubound(ff%cfg%x)
+                print*, "ff%cfg%imin: ", ff%cfg%imin
+                print*, "ff%cfg%imax: ", ff%cfg%imax
+                print*, "shock index: ", shock_index
+                print*, "x(shock_index): ", ff%cfg%x(shock_index)
+         !       !do i=ff%cfg%imino,ff%cfg%imaxo
+         !       !   print*, "i:", i, "x(i):", ff%cfg%x(i)
+         !       !end do
+         !       print*, "RHOG profile: ", RHOG_profile
+         !       print*, "IG profile: ", IG_profile
+         !       print*, "PG profile: ", PG_profile
+         !       print*, "Ui profile: ", Ui_profile
+                print*, "=== End of shock generator for far-field simulation ==="
+            end if
+           call update_shockprofile(ff%fs%Q(ff%cfg%imino_:ff%cfg%imaxo_,:,:,:),q,ff%fs%P(ff%cfg%imino_:ff%cfg%imaxo_,:,:),ff%fs%I(ff%cfg%imino_:ff%cfg%imaxo_,:,:),ff%Ui(ff%cfg%imino_:ff%cfg%imaxo_,:,:),RHOG_profile,PG_profile,IG_profile,Ui_profile,ff%cfg%imino_,ff%cfg%imaxo_,nshock,shock_index)  
+           ! rebuild conserved quantites
+           ! Initialize conserved variables
+           ff%fs%Q(:,:,:,2)=ff%fs%Q(:,:,:,1)*ff%fs%I
+           call ff%fs%get_momentum()
+           ! Rebuild primitive variables
+           call ff%fs%get_primitive()
+           ! Interpolate velocity
+           call ff%fs%interp_vel(ff%Ui,ff%Vi,ff%Wi)
+           ! Compute local Mach number
+           ff%Ma=sqrt(ff%Ui**2+ff%Vi**2+ff%Wi**2)/ff%fs%C
+           ! deallocate vars
+           deallocate(RHOG_profile,IG_profile,PG_profile,Ui_profile) 
+         end block ff_shockgen
+      end if
       
       ! Create couplers
       create_couplers: block
@@ -921,7 +921,7 @@ contains
          print*, "imin: ", imin
          print*, "imax: ", imax
          print*, "Shock index: ", shock_index
-         print*, "Shock index location (cell edge): ", xm(shock_index)
+         print*, "Shock index location (cell edge): ", x(shock_index)
          print*, "=============================="
       end if
    end subroutine find_shock
