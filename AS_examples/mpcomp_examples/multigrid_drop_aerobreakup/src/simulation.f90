@@ -528,7 +528,7 @@ contains
            call MPI_BCAST(Ui_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
            
            ! now find the shock in sd and set the profiles
-           call find_shock(shock_index,Xs,sd%cfg%dx(1),sd%cfg%xm(sd%cfg%imin:sd%cfg%imax),sd%cfg%imin,sd%cfg%imax)
+           call find_shock(shock_index,Xs,sd%cfg%dx(1),sd%cfg%x(sd%cfg%imin:sd%cfg%imax),sd%cfg%imin,sd%cfg%imax)
            if(amRoot)then
                print*, "=== shock generator for shock-drop simulation ==="
                print*, "Shock index: ", shock_index
@@ -673,24 +673,33 @@ contains
       !      call MPI_BCAST(Ui_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)            
 
       !      call find_shock(shock_index,Xs,ff%cfg%dx(1),ff%cfg%x(ff%cfg%imin:ff%cfg%imax),ff%cfg%imin,ff%cfg%imax)
-      !      if(amRoot)then
-      !          print*, "=== Shock generator for far-field simulation ==="
-      !          print *, 'LBOUND(x) = ', lbound(ff%cfg%x), 'UBOUND(x) = ', ubound(ff%cfg%x)
-      !          print*, "ff%cfg%imin: ", ff%cfg%imin
-      !          print*, "ff%cfg%imax: ", ff%cfg%imax
-      !          print*, "shock index: ", shock_index
-      !          print*, "x(shock_index): ", ff%cfg%x(shock_index)
-      !          !do i=ff%cfg%imino,ff%cfg%imaxo
-      !          !   print*, "i:", i, "x(i):", ff%cfg%x(i)
-      !          !end do
-      !          print*, "RHOG profile: ", RHOG_profile
-      !          print*, "IG profile: ", IG_profile
-      !          print*, "PG profile: ", PG_profile
-      !          print*, "Ui profile: ", Ui_profile
-      !          print*, "=== End of shock generator for far-field simulation ==="
-      !      end if
-      !      call update_shockprofile(ff%fs%Q,q,ff%fs%P,ff%fs%I,ff%Ui,RHOG_profile,PG_profile,IG_profile,Ui_profile,ff%cfg%imino_,ff%cfg%imaxo_,nshock,shock_index)  
-
+      !       if(amRoot)then
+      !           print*, "=== Shock generator for far-field simulation ==="
+      !           print *, 'LBOUND(x) = ', lbound(ff%cfg%x), 'UBOUND(x) = ', ubound(ff%cfg%x)
+      !           print*, "ff%cfg%imin: ", ff%cfg%imin
+      !           print*, "ff%cfg%imax: ", ff%cfg%imax
+      !           print*, "shock index: ", shock_index
+      !           print*, "x(shock_index): ", ff%cfg%x(shock_index)
+      !    !       !do i=ff%cfg%imino,ff%cfg%imaxo
+      !    !       !   print*, "i:", i, "x(i):", ff%cfg%x(i)
+      !    !       !end do
+      !    !       print*, "RHOG profile: ", RHOG_profile
+      !    !       print*, "IG profile: ", IG_profile
+      !    !       print*, "PG profile: ", PG_profile
+      !    !       print*, "Ui profile: ", Ui_profile
+      !           print*, "=== End of shock generator for far-field simulation ==="
+      !       end if
+      !      call update_shockprofile(ff%fs%Q(ff%cfg%imino_:ff%cfg%imaxo_,:,:,:),q,ff%fs%P(ff%cfg%imino_:ff%cfg%imaxo_,:,:),ff%fs%I(ff%cfg%imino_:ff%cfg%imaxo_,:,:),ff%Ui(ff%cfg%imino_:ff%cfg%imaxo_,:,:),RHOG_profile,PG_profile,IG_profile,Ui_profile,ff%cfg%imino_,ff%cfg%imaxo_,nshock,shock_index)  
+      !      ! rebuild conserved quantites
+      !      ! Initialize conserved variables
+      !      ff%fs%Q(:,:,:,2)=ff%fs%Q(:,:,:,1)*ff%fs%I
+      !      call ff%fs%get_momentum()
+      !      ! Rebuild primitive variables
+      !      call ff%fs%get_primitive()
+      !      ! Interpolate velocity
+      !      call ff%fs%interp_vel(ff%Ui,ff%Vi,ff%Wi)
+      !      ! Compute local Mach number
+      !      ff%Ma=sqrt(ff%Ui**2+ff%Vi**2+ff%Wi**2)/ff%fs%C
       !      ! deallocate vars
       !      deallocate(RHOG_profile,IG_profile,PG_profile,Ui_profile) 
       !    end block ff_shockgen
@@ -881,12 +890,12 @@ contains
       end if
    end subroutine sgen_init
    
-   subroutine find_shock(shock_index,Xs,dx,xm,imin,imax)
+   subroutine find_shock(shock_index,Xs,dx,x,imin,imax)
       use parallel, only: amRoot
       implicit none
       real(WP), intent(in) :: Xs,dx
       integer , intent(in) :: imin,imax
-      real(WP), dimension(:), intent(in) :: xm
+      real(WP), dimension(:), intent(in) :: x
       integer  :: i
       real(WP) :: d1,d2
       integer, intent(out) :: shock_index
@@ -896,9 +905,9 @@ contains
          !if(amRoot)then
          !   print*, "Incorrect i:", i, "x(i):", x(i)
          !end if
-         if (abs(xm(i) - Xs).lt.dx)then
-            d1 = abs(xm(i) - Xs)  
-            d2 = abs(xm(i+1) - Xs) 
+         if (abs(x(i) - Xs).lt.dx)then
+            d1 = abs(x(i) - Xs)  
+            d2 = abs(x(i+1) - Xs) 
             if(d1.lt.d2)then
                shock_index = i 
             else
@@ -908,7 +917,9 @@ contains
       end do
       if(amRoot)then
          print*, " === find_shock subroutine ==="
-         !print *, 'LBOUND(x) = ', lbound(x), 'UBOUND(x) = ', ubound(x)
+         print *, 'LBOUND(x) = ', lbound(x), 'UBOUND(x) = ', ubound(x)
+         print*, "imin: ", imin
+         print*, "imax: ", imax
          print*, "Shock index: ", shock_index
          print*, "Shock index location (cell edge): ", xm(shock_index)
          print*, "=============================="
