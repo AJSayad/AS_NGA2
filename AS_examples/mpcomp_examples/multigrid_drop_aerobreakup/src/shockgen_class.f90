@@ -229,44 +229,53 @@ contains
   end subroutine step
 
   !> Finalize shockgenerator simulation (get shock profile for simulation.f90)
-  subroutine finalize(this,nshock,Xend,RHOG_profile,IG_profile,PG_profile,Ui_profile)
-    use param,    only : param_read
-    use mpi_f08,  only : MPI_DOUBLE_PRECISION,MPI_BCAST,MPI_COMM_WORLD
-    implicit none
-    class(shockgen), intent(inout) :: this
-    real(WP), intent(out),dimension(:), allocatable :: RHOG_profile,IG_profile,PG_profile,Ui_profile ! shock profile arrays
-    integer  :: i,ierr,nshock
-    real(WP) :: Xs
-    real(WP),intent(in) :: Xend
+  subroutine finalize(this,nshock,Xend,RHOG_profile,IG_profile,PG_profile,U_profile)
+      use param,    only : param_read
+      use mpi_f08,  only : MPI_DOUBLE_PRECISION,MPI_BCAST,MPI_COMM_WORLD
+      implicit none
+      class(shockgen), intent(inout) :: this
+      real(WP), intent(out),dimension(:), allocatable :: RHOG_profile,IG_profile,PG_profile,U_profile ! shock profile arrays
+      integer  :: i,ierr,nshock
+      real(WP) :: Xs
+      real(WP),intent(in) :: Xend
 
-    ! for now, assume ddrop = 1 and that the shock travles 1 diameter, the final shock location is passed as an argument from sim.f90
-    call param_read('Shock location ',Xs)
-    !Xend = 1.0_WP + Xs 
-    
-    ! allocate shock profile arrays
-    allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),Ui_profile(2*nshock+1))
-    RHOG_profile = 0.0_WP; PG_profile = 0.0_WP; IG_profile = 0.0_WP; Ui_profile = 0.0_WP
+      ! for now, assume ddrop = 1 and that the shock travles 1 diameter, the final shock location is passed as an argument from sim.f90
+      call param_read('Shock location ',Xs)
+      !Xend = 1.0_WP + Xs 
+      
+      ! allocate shock profile arrays
+      allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),U_profile(2*nshock+1+1))
+      RHOG_profile = 0.0_WP; PG_profile = 0.0_WP; IG_profile = 0.0_WP; U_profile = 0.0_WP
 
-    ! we're setup to run this simulaiton in serial for now, so no need to worry about proc subdomains (unless this becomes too expensive)
-    this%shock_index = -10 ! initialize shock_index and dist
-    do i = this%cfg%imin, this%cfg%imax
-       if (abs(this%cfg%xm(i) - Xend).lt.this%cfg%dx(1)) then
-          this%shock_index = i
-       end if
-    end do
+      ! we're setup to run this simulaiton in serial for now, so no need to worry about proc subdomains (unless this becomes too expensive)
+      this%shock_index = -10 ! initialize shock_index and dist
+      ! do i = this%cfg%imin, this%cfg%imax
+      !    if (abs(this%cfg%xm(i) - Xend).lt.this%cfg%dx(1)) then ! this finds the cell center of the shock
+      !       this%shock_index = i 
+      !       exit
+      !    end if
+      ! end do
+      this%shock_index = ceiling( abs(Xend - this%cfg%xm(1))/this%cfg%dx(1)) ! this finds the cell center of the shock ! this only works on a uniform grid
+      !print*, "Shock Index (cell center): ", this%shock_index
 
-    do i=this%shock_index-nshock,this%shock_index+nshock ! saving 2*n_shock+1 points
-       RHOG_profile(i-this%shock_index+nshock+1) = this%fs%Q(i,1,1,1) ! density
-       IG_profile(i-this%shock_index+nshock+1)   = this%fs%I(i,1,1)   ! internal energy
-       PG_profile(i-this%shock_index+nshock+1)   = this%fs%P(i,1,1)   ! pressure
-       Ui_profile(i-this%shock_index+nshock+1)   = this%Ui  (i,1,1)   ! cell centered velocity
-    end do
+      do i=this%shock_index-nshock,this%shock_index+nshock ! saving 2*n_shock+1 points
+         !print*, "i: ", i,"x: ", this%cfg%x(i)
+         !print*, "i: ", i,"xm: ", this%cfg%xm(i)
+         RHOG_profile(i-this%shock_index+nshock+1) = this%fs%Q(i,1,1,1) ! density
+         IG_profile(i-this%shock_index+nshock+1)   = this%fs%I(i,1,1)   ! internal energy
+         PG_profile(i-this%shock_index+nshock+1)   = this%fs%P(i,1,1)   ! pressure
+         !U_profile (i-this%shock_index+nshock+1)   = this%fs%U(i,1,1)   ! face centered velocity at cell boundary
+      end do
 
+      ! loop again to get face centered velocity at cell boundary
+      do i=this%shock_index-nshock,this%shock_index+nshock+1
+         U_profile (i-this%shock_index+nshock+1)   = this%fs%U(i,1,1)   ! face centered velocity at cell boundary
+      end do
    !  print*, "=== From shockgen class ==="
    !  print*, "RHOG profile: ", RHOG_profile
    !  print*, "IG profile: ", IG_profile
    !  print*, "PG profile: ", PG_profile
-   !  print*, "Ui profile: ", Ui_profile
+   !  print*, "U profile: ", U_profile
 
   end subroutine finalize
 
