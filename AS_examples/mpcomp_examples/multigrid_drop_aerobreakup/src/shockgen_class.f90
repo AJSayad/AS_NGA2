@@ -26,10 +26,10 @@ module shockgen_class
      type(spcomp) :: fs        !< Multiphase compressible solver
      type(timetracker) :: time !< Time info
      !> Ensight postprocessing
-     type(ensight)  :: ens_out
-     type(event)    :: ens_evt
+     !type(ensight)  :: ens_out
+     !type(event)    :: ens_evt
      !> Simulation monitor file
-     type(monitor) :: mfile,cflfile,consfile
+     !type(monitor) :: mfile,cflfile,consfile
      !> Work arrays
      real(WP), dimension(:,:,:,:,:), allocatable :: dQdt
      real(WP), dimension(:,:,:)    , allocatable :: Ui,Vi,Wi,Ma,beta,visc
@@ -37,15 +37,14 @@ module shockgen_class
      real(WP) :: cst_visc
      !> shock profile
      integer  :: shock_index     ! i index of shock
-     !real(WP), dimension(:), allocatable :: RHOG_profile,IG_profile,PG_profile,Ui_profile ! shock profile arrays
      !> domain partiion
      integer, dimension(3) :: partition
    contains
      procedure :: initialize                      !< Initialize shock-drop simulation
      procedure :: step                            !< Advance shock-drop simulation by one time step
      procedure :: finalize                        !< Finalize shock-drop simulation
-     procedure :: output_monitor                  !< Monitoring for shock-drop case
-     procedure :: output_ensight                  !< Ensight output for shock-drop case
+     !procedure :: output_monitor                  !< Monitoring for shock-drop case
+     !procedure :: output_ensight                  !< Ensight output for shock-drop case
      procedure, private :: apply_bconds           !< Apply boundary conditions 
   end type shockgen
 
@@ -109,123 +108,123 @@ contains
       allocate(this%Ma(this%cfg%imino_:this%cfg%imaxo_,this%cfg%jmino_:this%cfg%jmaxo_,this%cfg%kmino_:this%cfg%kmaxo_))
     end block allocate_work_arrays
 
-    ! Add Ensight output
-    create_ensight: block
-      ! Create Ensight output from cfg
-      this%ens_out=ensight(cfg=this%cfg,name='Shockgen')
-      ! Add variables to output
-      call this%ens_out%add_vector('velocity',this%Ui,this%Vi,this%Wi)
-      call this%ens_out%add_scalar('RHO',this%fs%Q(:,:,:,1))
-      call this%ens_out%add_scalar('I',this%fs%I)
-      call this%ens_out%add_scalar('P',this%fs%P)
-      call this%ens_out%add_scalar('Mach',this%Ma)
-      call this%ens_out%add_scalar('beta',this%beta)
-      call this%ens_out%add_scalar('visc',this%visc)
-      call this%ens_out%add_vector('cell_vel',this%fs%U,this%fs%V,this%fs%W)
-      !call this%output_ensight()
-    end block create_ensight
+   !  ! Add Ensight output
+   !  create_ensight: block
+   !    ! Create Ensight output from cfg
+   !    this%ens_out=ensight(cfg=this%cfg,name='Shockgen')
+   !    ! Add variables to output
+   !    call this%ens_out%add_vector('velocity',this%Ui,this%Vi,this%Wi)
+   !    call this%ens_out%add_scalar('RHO',this%fs%Q(:,:,:,1))
+   !    call this%ens_out%add_scalar('I',this%fs%I)
+   !    call this%ens_out%add_scalar('P',this%fs%P)
+   !    call this%ens_out%add_scalar('Mach',this%Ma)
+   !    call this%ens_out%add_scalar('beta',this%beta)
+   !    call this%ens_out%add_scalar('visc',this%visc)
+   !    call this%ens_out%add_vector('cell_vel',this%fs%U,this%fs%V,this%fs%W)
+   !    !call this%output_ensight()
+   !  end block create_ensight
 
-    ! Create monitor files
-    create_monitor: block
-      ! Create simulation monitor
-      this%mfile=monitor(this%fs%cfg%amRoot,'shockgen_sim')
-      call this%mfile%add_column(this%time%n,'Timestep number')
-      call this%mfile%add_column(this%time%t,'Time')
-      call this%mfile%add_column(this%time%dt,'Timestep size')
-      call this%mfile%add_column(this%time%cfl,'Maximum CFL')
-      call this%mfile%add_column(this%fs%Umax,'Umax')
-      call this%mfile%add_column(this%fs%Vmax,'Vmax')
-      call this%mfile%add_column(this%fs%Wmax,'Wmax')
-      call this%mfile%add_column(this%fs%RHOmax,'max(RHO)')
-      call this%mfile%add_column(this%fs%RHOmin,'min(RHO)')
-      call this%mfile%add_column(this%fs%Imax  ,'max(I)'  )
-      call this%mfile%add_column(this%fs%Imin  ,'min(I)'  )
-      call this%mfile%add_column(this%fs%Pmax  ,'max(P)'  )
-      call this%mfile%add_column(this%fs%Pmin  ,'min(P)'  )
-      call this%mfile%add_column(this%fs%Tmax  ,'max(T)'  )
-      call this%mfile%add_column(this%fs%Tmin  ,'min(T)'  )
-      ! Create CFL monitor
-      this%cflfile=monitor(this%fs%cfg%amRoot,'shockgen_cfl')
-      call this%cflfile%add_column(this%time%n,'Timestep number')
-      call this%cflfile%add_column(this%time%t,'Time')
-      call this%cflfile%add_column(this%fs%CFLc_x,'Convective xCFL')
-      call this%cflfile%add_column(this%fs%CFLc_y,'Convective yCFL')
-      call this%cflfile%add_column(this%fs%CFLc_z,'Convective zCFL')
-      call this%cflfile%add_column(this%fs%CFLa_x,'Acoustic xCFL')
-      call this%cflfile%add_column(this%fs%CFLa_y,'Acoustic yCFL')
-      call this%cflfile%add_column(this%fs%CFLa_z,'Acoustic zCFL')
-      call this%cflfile%add_column(this%fs%CFLv_x,'Viscous xCFL')
-      call this%cflfile%add_column(this%fs%CFLv_y,'Viscous yCFL')
-      call this%cflfile%add_column(this%fs%CFLv_z,'Viscous zCFL')
-      ! Create conservation monitor
-      this%consfile=monitor(this%fs%cfg%amRoot,'shockgen_cons')
-      call this%consfile%add_column(this%time%n,'Timestep number')
-      call this%consfile%add_column(this%time%t,'Time')
-      call this%consfile%add_column(this%fs%Qint(1),'Mass')
-      call this%consfile%add_column(this%fs%Qint(2),'Energy')
-      call this%consfile%add_column(this%fs%Qint(3),'U Momentum')
-      call this%consfile%add_column(this%fs%Qint(4),'V Momentum')
-      call this%consfile%add_column(this%fs%Qint(5),'W Momentum')
-      call this%consfile%add_column(this%fs%RHOKint,'Kinetic Energy')
-      call this%consfile%add_column(this%fs%RHOSint,'Entropy')
-    end block create_monitor
-    call this%output_monitor()
+   !  ! Create monitor files
+   !  create_monitor: block
+   !    ! Create simulation monitor
+   !    this%mfile=monitor(this%fs%cfg%amRoot,'shockgen_sim')
+   !    call this%mfile%add_column(this%time%n,'Timestep number')
+   !    call this%mfile%add_column(this%time%t,'Time')
+   !    call this%mfile%add_column(this%time%dt,'Timestep size')
+   !    call this%mfile%add_column(this%time%cfl,'Maximum CFL')
+   !    call this%mfile%add_column(this%fs%Umax,'Umax')
+   !    call this%mfile%add_column(this%fs%Vmax,'Vmax')
+   !    call this%mfile%add_column(this%fs%Wmax,'Wmax')
+   !    call this%mfile%add_column(this%fs%RHOmax,'max(RHO)')
+   !    call this%mfile%add_column(this%fs%RHOmin,'min(RHO)')
+   !    call this%mfile%add_column(this%fs%Imax  ,'max(I)'  )
+   !    call this%mfile%add_column(this%fs%Imin  ,'min(I)'  )
+   !    call this%mfile%add_column(this%fs%Pmax  ,'max(P)'  )
+   !    call this%mfile%add_column(this%fs%Pmin  ,'min(P)'  )
+   !    call this%mfile%add_column(this%fs%Tmax  ,'max(T)'  )
+   !    call this%mfile%add_column(this%fs%Tmin  ,'min(T)'  )
+   !    ! Create CFL monitor
+   !    this%cflfile=monitor(this%fs%cfg%amRoot,'shockgen_cfl')
+   !    call this%cflfile%add_column(this%time%n,'Timestep number')
+   !    call this%cflfile%add_column(this%time%t,'Time')
+   !    call this%cflfile%add_column(this%fs%CFLc_x,'Convective xCFL')
+   !    call this%cflfile%add_column(this%fs%CFLc_y,'Convective yCFL')
+   !    call this%cflfile%add_column(this%fs%CFLc_z,'Convective zCFL')
+   !    call this%cflfile%add_column(this%fs%CFLa_x,'Acoustic xCFL')
+   !    call this%cflfile%add_column(this%fs%CFLa_y,'Acoustic yCFL')
+   !    call this%cflfile%add_column(this%fs%CFLa_z,'Acoustic zCFL')
+   !    call this%cflfile%add_column(this%fs%CFLv_x,'Viscous xCFL')
+   !    call this%cflfile%add_column(this%fs%CFLv_y,'Viscous yCFL')
+   !    call this%cflfile%add_column(this%fs%CFLv_z,'Viscous zCFL')
+   !    ! Create conservation monitor
+   !    this%consfile=monitor(this%fs%cfg%amRoot,'shockgen_cons')
+   !    call this%consfile%add_column(this%time%n,'Timestep number')
+   !    call this%consfile%add_column(this%time%t,'Time')
+   !    call this%consfile%add_column(this%fs%Qint(1),'Mass')
+   !    call this%consfile%add_column(this%fs%Qint(2),'Energy')
+   !    call this%consfile%add_column(this%fs%Qint(3),'U Momentum')
+   !    call this%consfile%add_column(this%fs%Qint(4),'V Momentum')
+   !    call this%consfile%add_column(this%fs%Qint(5),'W Momentum')
+   !    call this%consfile%add_column(this%fs%RHOKint,'Kinetic Energy')
+   !    call this%consfile%add_column(this%fs%RHOSint,'Entropy')
+   !    end block create_monitor
+   !    call this%output_monitor()
   end subroutine initialize
 
   subroutine step(this)
-    implicit none
-    class(shockgen), intent(inout)  :: this
+      implicit none
+      class(shockgen), intent(inout)  :: this
 
-    ! Increment time
-    call this%fs%get_cfl(dt=this%time%dt,cfl=this%time%cfl)
-    call this%time%increment()
+      ! Increment time
+      call this%fs%get_cfl(dt=this%time%dt,cfl=this%time%cfl)
+      call this%time%increment()
 
-    ! Remember conserved variables
-    this%fs%Qold=this%fs%Q
+      ! Remember conserved variables
+      this%fs%Qold=this%fs%Q
 
-    ! Prepare SGS viscosity models
-    ! Get LAD
-    call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta)
-    if(viscous_flag.eqv.(.true.))then ! only get vreman model if we're running viscous
-       ! Get eddy viscosity
-       call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
-    end if
+      ! Prepare SGS viscosity models
+      ! Get LAD
+      call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta)
+      if(viscous_flag.eqv.(.true.))then ! only get vreman model if we're running viscous
+         ! Get eddy viscosity
+         call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
+      end if
 
-    ! First RK step ====================================================================================
-    ! Get non-SL RHS and increment
-    call this%fs%rhs(this%dQdt(:,:,:,:,1))
-    this%fs%Q=this%fs%Qold+0.5_WP*this%time%dt*this%dQdt(:,:,:,:,1)
-    ! Recompute primitive variables
-    call this%fs%get_primitive()
-    ! Second RK step ===================================================================================
-    ! Get non-SL RHS and increment
-    call this%fs%rhs(this%dQdt(:,:,:,:,2))
-    this%fs%Q=this%fs%Qold+0.5_WP*this%time%dt*this%dQdt(:,:,:,:,2)
-    ! Recompute primitive variables
-    call this%fs%get_primitive()
-    ! Third RK step ====================================================================================
-    ! Get non-SL RHS and increment
-    call this%fs%rhs(this%dQdt(:,:,:,:,3))
-    this%fs%Q=this%fs%Qold+1.0_WP*this%time%dt*this%dQdt(:,:,:,:,3)
-    ! Recompute primitive variables
-    call this%fs%get_primitive()
-    ! Fourth RK step ===================================================================================
-    ! Get non-SL RHS and increment
-    call this%fs%rhs(this%dQdt(:,:,:,:,4))
-    this%fs%Q=this%fs%Qold+this%time%dt/6.0_WP*(this%dQdt(:,:,:,:,1)+2.0_WP*this%dQdt(:,:,:,:,2)+2.0_WP*this%dQdt(:,:,:,:,3)+this%dQdt(:,:,:,:,4))
-    ! Recompute primitive variables
-    call this%fs%get_primitive()
+      ! First RK step ====================================================================================
+      ! Get non-SL RHS and increment
+      call this%fs%rhs(this%dQdt(:,:,:,:,1))
+      this%fs%Q=this%fs%Qold+0.5_WP*this%time%dt*this%dQdt(:,:,:,:,1)
+      ! Recompute primitive variables
+      call this%fs%get_primitive()
+      ! Second RK step ===================================================================================
+      ! Get non-SL RHS and increment
+      call this%fs%rhs(this%dQdt(:,:,:,:,2))
+      this%fs%Q=this%fs%Qold+0.5_WP*this%time%dt*this%dQdt(:,:,:,:,2)
+      ! Recompute primitive variables
+      call this%fs%get_primitive()
+      ! Third RK step ====================================================================================
+      ! Get non-SL RHS and increment
+      call this%fs%rhs(this%dQdt(:,:,:,:,3))
+      this%fs%Q=this%fs%Qold+1.0_WP*this%time%dt*this%dQdt(:,:,:,:,3)
+      ! Recompute primitive variables
+      call this%fs%get_primitive()
+      ! Fourth RK step ===================================================================================
+      ! Get non-SL RHS and increment
+      call this%fs%rhs(this%dQdt(:,:,:,:,4))
+      this%fs%Q=this%fs%Qold+this%time%dt/6.0_WP*(this%dQdt(:,:,:,:,1)+2.0_WP*this%dQdt(:,:,:,:,2)+2.0_WP*this%dQdt(:,:,:,:,3)+this%dQdt(:,:,:,:,4))
+      ! Recompute primitive variables
+      call this%fs%get_primitive()
 
-    ! Apply boundary conditions
-    call this%apply_bconds() ! --> we removed this since this is always a fully periodic case
+      ! Apply boundary conditions
+      call this%apply_bconds() ! --> we removed this since this is always a fully periodic case
 
-    ! Interpolate velocity
-    call this%fs%interp_vel(this%Ui,this%Vi,this%Wi)
+      ! Interpolate velocity
+      call this%fs%interp_vel(this%Ui,this%Vi,this%Wi)
 
-    ! Compute local Mach number
-    this%Ma=sqrt(this%Ui**2+this%Vi**2+this%Wi**2)/this%fs%C
-    call this%output_monitor()
-    call this%output_ensight()
+      ! Compute local Mach number
+      this%Ma=sqrt(this%Ui**2+this%Vi**2+this%Wi**2)/this%fs%C
+      !call this%output_monitor()
+      !call this%output_ensight()
   end subroutine step
 
   !> Finalize shockgenerator simulation (get shock profile for simulation.f90)
@@ -241,45 +240,26 @@ contains
 
       ! for now, assume ddrop = 1 and that the shock travles 1 diameter, the final shock location is passed as an argument from sim.f90
       call param_read('Shock location ',Xs)
-      !Xend = 1.0_WP + Xs 
-      
       ! allocate shock profile arrays
-      allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),U_profile(2*nshock+1+1))
+      allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),U_profile(2*nshock+2))
       RHOG_profile = 0.0_WP; PG_profile = 0.0_WP; IG_profile = 0.0_WP; U_profile = 0.0_WP
 
       ! we're setup to run this simulaiton in serial for now, so no need to worry about proc subdomains (unless this becomes too expensive)
-      this%shock_index = -10 ! initialize shock_index and dist
-      ! do i = this%cfg%imin, this%cfg%imax
-      !    if (abs(this%cfg%xm(i) - Xend).lt.this%cfg%dx(1)) then ! this finds the cell center of the shock
-      !       this%shock_index = i 
-      !       exit
-      !    end if
-      ! end do
-      this%shock_index = ceiling( abs(Xend - this%cfg%xm(1))/this%cfg%dx(1)) ! this finds the cell center of the shock ! this only works on a uniform grid
-      !print*, "Shock Index (cell center): ", this%shock_index
-
-      do i=this%shock_index-nshock,this%shock_index+nshock ! saving 2*n_shock+1 points
-         !print*, "i: ", i,"x: ", this%cfg%x(i)
-         !print*, "i: ", i,"xm: ", this%cfg%xm(i)
+      this%shock_index = -10 ! initialize shock_index 
+      this%shock_index = ceiling( abs(Xend - this%cfg%xm(1))/this%cfg%dx(1)) ! this finds the cell center of the shock only works on a uniform grid
+      ! loop over domain to copy shock profile
+      do i=this%shock_index-nshock,this%shock_index+nshock              ! saving 2*n_shock+1 points
          RHOG_profile(i-this%shock_index+nshock+1) = this%fs%Q(i,1,1,1) ! density
          IG_profile(i-this%shock_index+nshock+1)   = this%fs%I(i,1,1)   ! internal energy
          PG_profile(i-this%shock_index+nshock+1)   = this%fs%P(i,1,1)   ! pressure
-         !U_profile (i-this%shock_index+nshock+1)   = this%fs%U(i,1,1)   ! face centered velocity at cell boundary
       end do
-
       ! loop again to get face centered velocity at cell boundary
-      do i=this%shock_index-nshock,this%shock_index+nshock+1
+      do i=this%shock_index-nshock,this%shock_index+nshock+1            ! saves one extra point for face velocity 2*n_shock+1+1
          U_profile (i-this%shock_index+nshock+1)   = this%fs%U(i,1,1)   ! face centered velocity at cell boundary
       end do
-   !  print*, "=== From shockgen class ==="
-   !  print*, "RHOG profile: ", RHOG_profile
-   !  print*, "IG profile: ", IG_profile
-   !  print*, "PG profile: ", PG_profile
-   !  print*, "U profile: ", U_profile
-
   end subroutine finalize
 
-     !> Apply boundary conditions
+   !> Apply boundary conditions
    subroutine apply_bconds(this)
       implicit none
       class(shockgen), intent(inout) :: this
@@ -375,25 +355,25 @@ contains
       
    end subroutine apply_bconds
 
-  !> Perform and output monitoring for the shock generator problem
-  subroutine output_monitor(this)
-    implicit none
-    class(shockgen), intent(inout) :: this
-    call this%fs%get_info()
-    call this%mfile%write()
-    call this%cflfile%write()
-    call this%consfile%write()
-  end subroutine output_monitor
-  !> Output ensight files for the shock generator problem
-  subroutine output_ensight(this,t)
-    implicit none
-    class(shockgen), intent(inout) :: this
-    real(WP), intent(in), optional :: t
-    if (present(t)) then
-       call this%ens_out%write_data(t)
-    else
-       call this%ens_out%write_data(this%time%t)
-    end if
-  end subroutine output_ensight
+!   !> Perform and output monitoring for the shock generator problem
+!   subroutine output_monitor(this)
+!     implicit none
+!     class(shockgen), intent(inout) :: this
+!     call this%fs%get_info()
+!     call this%mfile%write()
+!     call this%cflfile%write()
+!     call this%consfile%write()
+!   end subroutine output_monitor
+!   !> Output ensight files for the shock generator problem
+!   subroutine output_ensight(this,t)
+!     implicit none
+!     class(shockgen), intent(inout) :: this
+!     real(WP), intent(in), optional :: t
+!     if (present(t)) then
+!        call this%ens_out%write_data(t)
+!     else
+!        call this%ens_out%write_data(this%time%t)
+!     end if
+!   end subroutine output_ensight
 
 end module shockgen_class
