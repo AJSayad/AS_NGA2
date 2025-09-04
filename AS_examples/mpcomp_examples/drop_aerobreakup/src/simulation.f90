@@ -521,7 +521,7 @@ contains
             call MPI_BCAST(RHOG_profile,2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr) 
             call MPI_BCAST(IG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
             call MPI_BCAST(PG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
-            call MPI_BCAST(U_profile,   2*nshock+1+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+            call MPI_BCAST(U_profile,   2*nshock+2,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
             
             ! find and update shock 
             shock_index = ceiling( abs(Xs - sd%cfg%xm(1))/sd%cfg%dx(1))
@@ -609,7 +609,7 @@ contains
 
          if (sgenflag.eqv.(.true.))then            
             ! allocate shock profile arrays on all procs
-            call param_read('nshock',nshock,default=8) ! set number of points for shock profile (left and right of center total pts = 2*nshock+1)
+            call param_read('nshock',nshock,default=12) ! set number of points for shock profile (left and right of center total pts = 2*nshock+1)
             allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),U_profile(2*nshock+2)) ! add an extra +1 for U for staggered grid
             RHOG_profile = 0.0_WP; PG_profile = 0.0_WP; IG_profile = 0.0_WP; U_profile = 0.0_WP
 
@@ -635,7 +635,7 @@ contains
             call MPI_BCAST(RHOG_profile,2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr) 
             call MPI_BCAST(IG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
             call MPI_BCAST(PG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
-            call MPI_BCAST(U_profile,   2*nshock+1+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+            call MPI_BCAST(U_profile,   2*nshock+2,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
 
             ! find and update shock
             shock_index = ceiling(abs(Xs - ff%cfg%xm(1))/ff%cfg%dx(1)) ! --> comes from  Loc = shock_index*dx --> shock_index = Loc/dx
