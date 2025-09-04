@@ -10,7 +10,7 @@ module simulation
    use monitor_class,     only: monitor
    use timer_class,       only: timer
    implicit none
-   private; public :: simulation_init,simulation_run,simulation_final,sgen_init,update_shockprofile!,find_shock
+   private; public :: simulation_init,simulation_run,simulation_final,sgen_init,update_shockprofile
    
    !> Track time from here
    type(timetracker) :: time
@@ -18,6 +18,7 @@ module simulation
    !> shock-Gen simulation
    type(shockgen), pointer :: sg=>null()
    real(WP) :: ushock ! used to store the velocity of the shock for shock generator
+   logical, public :: sgenflag ! true for running shockgenerator
    
    !> Shock-drop simulation - pointer since we will dynamically remesh
    type(shockdrop), pointer :: sd=>null()
@@ -31,6 +32,7 @@ module simulation
    
    !> Ensight output event
    type(event) :: ens_evt
+   type(event) :: drop_evt
    
    !> Remeshing event
    type(event) :: remesh_evt
@@ -65,9 +67,6 @@ module simulation
    real(WP) :: rho_ratio,c_ratio
    real(WP) :: rhoL,ML
    real(WP) :: ReG,viscG,viscL,visc_ratio
-
-   !> Flags
-   logical, public :: sgenflag ! true for running shockgenerator
    
 contains
    
@@ -206,6 +205,7 @@ contains
       Q(4)=Q(4)+Peq*(VFeq-VF)
       VF=VFeq
    end subroutine P_relax_implicit
+   
    
    !> Thermo-mechanical relaxation model
    subroutine PT_relax(VF,Q)
@@ -670,6 +670,13 @@ contains
          end if
       end block initialize_ensight
       
+      ! Drop analysis event
+      drop_analysis_event: block
+         use param, only: param_read
+         drop_evt=event(time=time,name='Drop analysis')
+         call param_read('Drop analysis period',drop_evt%tper)
+      end block drop_analysis_event
+      
       ! Initialize remeshing event
       initialize_remeshing: block
          use param, only: param_read
@@ -728,6 +735,7 @@ contains
       end function levelset_drop
    end subroutine simulation_init
    
+   
    !> Perform an NGA2 simulation
    subroutine simulation_run
       implicit none
@@ -775,6 +783,9 @@ contains
             call ff%output_ensight(t=time%t)
          end if
          
+         ! Droplet analysis
+         if (drop_evt%occurs()) call sd%analyze_drops()
+         
          ! Remesh sd
          call tmesh%start()
          if (remesh_evt%occurs()) call remesh()
@@ -789,7 +800,7 @@ contains
       end do
       
    end subroutine simulation_run
-
+   
    subroutine sgen_init(dx,meshsize,X0,sgen_group,viscG,Xs,Xend,ushock)
       use param,    only: param_read
       use parallel, only: group,amRoot
@@ -1261,8 +1272,8 @@ contains
       integer :: i,j,k,n,m,ierr,nremoved,ncreated,np
       real(WP), dimension(:)  , allocatable :: Vd,Md,Pd
       real(WP), dimension(:,:), allocatable :: Bd,Ud
-      real(WP), parameter :: vol_coeff=32.0_WP
-      real(WP), parameter :: diameter_threshold=1.0e-2_WP
+      real(WP), parameter :: vol_coeff=64.0_WP            !< excessively large drops are not transfered
+      real(WP), parameter :: diameter_threshold=1.0e-1_WP !< disallow excessively small drops
       real(WP), dimension(3) :: edgelo,edgehi
       character(len=str_long) :: message
       
@@ -1433,9 +1444,25 @@ contains
       end function make_label
       !> Function that identifies if cell pairs have same label
       logical function same_label(i1,j1,k1,i2,j2,k2)
+         use irl_fortran_interface, only: calculateNormal,calculateCentroid
          implicit none
-         integer, intent(in) :: i1,j1,k1,i2,j2,k2
+         integer , intent(in) :: i1,j1,k1,i2,j2,k2
+         real(WP), dimension(3) :: N1,N2,O1,O2
+         ! Big default, assume same label
          same_label=.true.
+         ! Look more closely at the local polygon alignment to decide whether to use same labels
+         if (sd%fs%VF(i1,j1,k1).gt.0.0_WP.and.sd%fs%VF(i1,j1,k1).lt.1.0_WP.and.sd%fs%VF(i2,j2,k2).gt.0.0_WP.and.sd%fs%VF(i2,j2,k2).lt.1.0_WP) then
+            ! Get polygon normals
+            N1=calculateNormal(sd%fs%interface_polygon(i1,j1,k1))
+            N2=calculateNormal(sd%fs%interface_polygon(i2,j2,k2))
+            ! If not at least ~75 degrees, return
+            if (dot_product(N1,N2).ge.0.3_WP) return
+            ! Get polygon barycenters
+            O1=calculateCentroid(sd%fs%interface_polygon(i1,j1,k1))
+            O2=calculateCentroid(sd%fs%interface_polygon(i2,j2,k2))
+            ! If pointing towards one another, use different labels
+            if (dot_product(O1-O2,N1).lt.0.0_WP.and.dot_product(O2-O1,N2).lt.0.0_WP) same_label=.false.
+         end if
       end function same_label
       !> Function that test closeness of a point X0 to edge of sd domain
       logical function close_to_edge(X0)
