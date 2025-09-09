@@ -67,6 +67,7 @@ module simulation
    real(WP) :: rho_ratio,c_ratio
    real(WP) :: rhoL,ML
    real(WP) :: ReG,viscG,viscL,visc_ratio
+   real(WP) :: tc2 ! characteristic time scale
    !> dimensional case
    logical, public :: dim_flag ! true for running a dimensional case
    real(WP) :: ddrop           ! drop diameter
@@ -327,6 +328,7 @@ contains
             if (visc_ratio.eq.0.0_WP)then ! if visc_ratio is zero, we are running inviscid 
                viscL=0.0_WP; viscG=0.0_WP
             end if
+            tc2 = (ddrop/u2)*sqrt(rhoL/rho2) ! characteristic time scale for logging
          else ! run dimensional case
             call param_read('Liquid Pinf',PinfL)
             call param_read('Liquid density',rhoL)
@@ -353,6 +355,7 @@ contains
             ReG = rho2*u2*ddrop/viscG                                 ! Reynolds number based on post-shock conditions
             c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1) ! sound speed ratio
             ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)
+            tc2 = (ddrop/u2)*sqrt(rhoL/rho2)                          ! characteristic time scale for logging
          end if ! dimensional flag
          ! Output case info
          if (amRoot) then
@@ -379,6 +382,7 @@ contains
             write(message,'("[Viscosity ratio]  => muL/muG=",es12.5)') visc_ratio; call log(message)
             write(message,'("[Gas    viscosity] =>     muG=",es12.5)')      viscG; call log(message)
             write(message,'("[Liquid viscosity] =>     muL=",es12.5)')      viscL; call log(message)
+            write(message,'("[Characteristic Time Scale] => tc2=",es12.5)')   tc2; call log(message)
          end if
       end block initialize_parameters
       
@@ -553,10 +557,6 @@ contains
             X0=-0.5_WP*real(meshsize,WP)*dx
             Xend = ddrop + Xs  !> let the shock travel 1 diameter 
             if(amRoot)then     !> setup and run sg only on root proc
-               !print*, "main ddrop= ", ddrop
-               !print*, "main Xs= ", Xs
-               !print*, "main Xend= ", Xend
-               !print*, "main ushock= ", ushock
                call sgen_init(dx,meshsize,X0,sgen_group,viscG,Xs,Xend,ushock)
                !> run shock gen simulation
                do while (.not.sg%time%done())
