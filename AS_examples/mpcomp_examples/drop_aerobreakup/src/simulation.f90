@@ -17,7 +17,7 @@ module simulation
 
    !> shock-Gen simulation
    type(shockgen), pointer :: sg=>null()
-   real(WP) :: ushock ! used to store the velocity of the shock for shock generator
+   real(WP) :: ushock          ! used to store the velocity of the shock for shock generator
    logical, public :: sgenflag ! true for running shockgenerator
    
    !> Shock-drop simulation - pointer since we will dynamically remesh
@@ -67,6 +67,9 @@ module simulation
    real(WP) :: rho_ratio,c_ratio
    real(WP) :: rhoL,ML
    real(WP) :: ReG,viscG,viscL,visc_ratio
+   !> dimensional case
+   logical, public :: dim_flag ! true for running a dimensional case
+   real(WP) :: ddrop           ! drop diameter
    
 contains
    
@@ -279,7 +282,13 @@ contains
          use param,    only: param_read
          character(str_long) :: message
          ! read in case flags
-         call param_read('Shock generator',sgenflag)
+         call param_read('Shock generator' ,sgenflag)
+         call param_read('Dimensional flag',dim_flag)
+         if(dim_flag.eqv.(.true.))then
+            call param_read('Drop diameter',ddrop)
+         else
+            ddrop = 1.0_WP
+         end if 
          ! Set PinfG to zero
          PinfG=0.0_WP
          ! Read in Gammas
@@ -288,34 +297,67 @@ contains
          ! Read in shock Mach number and location
          call param_read('Shock Mach number',Ms)
          call param_read('Shock location',Xs)
-         ! First generate static shock with normalized pre-shock conditions
-         M1=Ms
-         rho1=1.0_WP
-         rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP)
-         p1=0.25_WP*rho1/GammaG*((GammaG+1.0_WP)*M1/(M1**2-1.0_WP))**2 ! Ensures that |u2-u1|=1
-         p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)
-         u1=M1*sqrt(GammaG*p1/rho1); ushock = u1 ! store shock velocity
-         u2=u1*rho1/rho2
-         ! Now shift frame of reference to obtain moving shock
-         u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2); u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)
-         ! Read in density ratio and use it to set liquid density
-         call param_read('Density ratio',rho_ratio); rhoL=rho_ratio*rho1
-         ! Read in liquid Mach number and use it to set PinfL
-         !call param_read('Liquid Mach number',ML)
-         !PinfL=(u2/ML)**2*rhoL/GammaL-p1
-         !c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)
-         ! Read in sound speed ratio and use it to set PinfL
-         call param_read('Sound speed ratio',c_ratio)
-         PinfL=p1*(rho_ratio*c_ratio**2*GammaG/GammaL-1.0_WP)
-         ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)
-         ! Set heat capacities corresponding to a normalized pre-shock and liquid temperature
-         CvL=(p1+PinfL)/(rhoL*(GammaL-1.0_WP))
-         CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
-         ! Viscous parameters
-         call param_read('Gas Reynolds number',ReG); viscG=rho1*1.0_WP*u2/ReG 
-         call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG
+         if (dim_flag.eqv.(.false.))then ! run nondimensional
+            ! First generate static shock with normalized pre-shock conditions
+            M1=Ms
+            rho1=1.0_WP
+            rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP)
+            p1=0.25_WP*rho1/GammaG*((GammaG+1.0_WP)*M1/(M1**2-1.0_WP))**2 ! Ensures that |u2-u1|=1
+            p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)
+            u1=M1*sqrt(GammaG*p1/rho1); ushock = u1 ! store shock velocity
+            u2=u1*rho1/rho2
+            ! Now shift frame of reference to obtain moving shock
+            u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2); u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)
+            ! Read in density ratio and use it to set liquid density
+            call param_read('Density ratio',rho_ratio); rhoL=rho_ratio*rho1
+            ! Read in liquid Mach number and use it to set PinfL
+            !call param_read('Liquid Mach number',ML)
+            !PinfL=(u2/ML)**2*rhoL/GammaL-p1
+            !c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)
+            ! Read in sound speed ratio and use it to set PinfL
+            call param_read('Sound speed ratio',c_ratio)
+            PinfL=p1*(rho_ratio*c_ratio**2*GammaG/GammaL-1.0_WP)
+            ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)
+            ! Set heat capacities corresponding to a normalized pre-shock and liquid temperature
+            CvL=(p1+PinfL)/(rhoL*(GammaL-1.0_WP))
+            CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
+            ! Viscous parameters
+            call param_read('Gas Reynolds number',ReG); viscG=rho1*1.0_WP*u2/ReG 
+            call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG
+            if (visc_ratio.eq.0.0_WP)then ! if visc_ratio is zero, we are running inviscid 
+               viscL=0.0_WP; viscG=0.0_WP
+            end if
+         else ! run dimensional case
+            call param_read('Liquid Pinf',PinfL)
+            call param_read('Liquid density',rhoL)
+            call param_read('Liquid specific heat (constant vol)',CvL)
+            call param_read('Liquid dynamic viscosity',viscL)
+            ! Read in Gas variables
+            call param_read('Pre-shock density',rho1)
+            call param_read('Pre-shock pressure',p1)
+            call param_read('Gas specific heat (constant vol)',CvG)
+            call param_read('Gas dynamic viscosity',viscG)
+            ! Use shock relations (shock fixed frame) to calculate post-shock conditions 
+            M1 = Ms ! set M1 equal to shock Mach number for now 
+            rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP) ! post shock density  (Anderson 3.53)
+            p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)    ! post shock pressure (Anderson 3.57)
+            u1=M1*sqrt(GammaG*p1/rho1)                                     ! velocity in state 1 (left side of shock in fixed frame)
+            ushock = u1                                                    ! store shock velocity (used for shock generator to set tmax)
+            u2=u1*rho1/rho2                                                ! velocity in state 2 (Anderson 3.53, right side of shock in fixed frame)
+            ! we now shift to accomodate a moving shock (converting from shock fixed frame to lab frame)
+            u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2)                      ! post-shock gas velocity and post shock Mach number
+            u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)                          ! set pre-shock gas velocity to zero and update pre-shock Mach number
+            ! compute some non-dimensional parameters for log files
+            rho_ratio=rho2/rho1                                       ! density ratio
+            visc_ratio=viscL/viscG                                    ! viscosity ratio
+            ReG = rho2*u2*ddrop/viscG                                 ! Reynolds number based on post-shock conditions
+            c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1) ! sound speed ratio
+            ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)
+         end if ! dimensional flag
          ! Output case info
          if (amRoot) then
+            write(message,'("Shock generator  => ",L1)'    ) sgenflag; call log(message)
+            write(message,'("Dimensional case => ",L1)'    ) dim_flag; call log(message)
             write(message,'("[Liquid EOS] => Gamma=",es12.5)') GammaL; call log(message)
             write(message,'("[Liquid EOS] =>  Pinf=",es12.5)')  PinfL; call log(message)
             write(message,'("[Liquid EOS] =>    Cv=",es12.5)')    CvL; call log(message)
@@ -415,7 +457,8 @@ contains
          call param_read('Shock-drop max nz',max_nz,default=0)
          call param_read('Shock-drop partition',partition)
          ! Set initial domain of size (2D)^3 centered on (0,0,0)
-         meshsize=min(nint([(1.0_WP+2.0_WP*Lmargin)/dx,(1.0_WP+2.0_WP*Lmargin)/dx,(1.0_WP+2.0_WP*Lmargin)/dx]),merge([max_nx,max_ny,max_nz],huge(1),[max_nx,max_ny,max_nz].gt.0))
+         !meshsize=min(nint([(1.0_WP+2.0_WP*Lmargin)/dx,(1.0_WP+2.0_WP*Lmargin)/dx,(1.0_WP+2.0_WP*Lmargin)/dx]),merge([max_nx,max_ny,max_nz],huge(1),[max_nx,max_ny,max_nz].gt.0))
+         meshsize=min(nint([(ddrop+2.0_WP*Lmargin)/dx,(ddrop+2.0_WP*Lmargin)/dx,(ddrop+2.0_WP*Lmargin)/dx]),merge([max_nx,max_ny,max_nz],huge(1),[max_nx,max_ny,max_nz].gt.0))
          X0=-0.5_WP*real(meshsize,WP)*dx
          ! Allocate and initialize the shock-drop solver
          allocate(sd); call sd%initialize(dx=dx,meshsize=meshsize,startloc=X0,group=group,partition=partition,continue_monitor=.false.)
@@ -506,10 +549,14 @@ contains
             max_nx = 0; max_ny = 0; max_nz = 0; 
 
             ! Set initial domain of size (2D)^3 centered on (0,0,0)
-            meshsize=min(nint([(1.0_WP+2.0_WP*Lmargin)/dx,(1.0_WP+2.0_WP*Lmargin)/dx,(1.0_WP+2.0_WP*Lmargin)/dx]),merge([max_nx,max_ny,max_nz],huge(1),[max_nx,max_ny,max_nz].gt.0))
+            meshsize=min(nint([(ddrop+2.0_WP*Lmargin)/dx,(ddrop+2.0_WP*Lmargin)/dx,(ddrop+2.0_WP*Lmargin)/dx]),merge([max_nx,max_ny,max_nz],huge(1),[max_nx,max_ny,max_nz].gt.0))
             X0=-0.5_WP*real(meshsize,WP)*dx
-            Xend = 1.0_WP + Xs ! let the shock travel 1 diameter ! this is where the shock will end (comes from delta_x = Xend - Xs)
+            Xend = ddrop + Xs  !> let the shock travel 1 diameter 
             if(amRoot)then     !> setup and run sg only on root proc
+               !print*, "main ddrop= ", ddrop
+               !print*, "main Xs= ", Xs
+               !print*, "main Xend= ", Xend
+               !print*, "main ushock= ", ushock
                call sgen_init(dx,meshsize,X0,sgen_group,viscG,Xs,Xend,ushock)
                !> run shock gen simulation
                do while (.not.sg%time%done())
@@ -609,7 +656,7 @@ contains
 
          if (sgenflag.eqv.(.true.))then            
             ! allocate shock profile arrays on all procs
-            call param_read('nshock',nshock,default=12) ! set number of points for shock profile (left and right of center total pts = 2*nshock+1)
+            call param_read('nshock',nshock,default=8) ! set number of points for shock profile (left and right of center total pts = 2*nshock+1)
             allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),U_profile(2*nshock+2)) ! add an extra +1 for U for staggered grid
             RHOG_profile = 0.0_WP; PG_profile = 0.0_WP; IG_profile = 0.0_WP; U_profile = 0.0_WP
 
@@ -622,7 +669,7 @@ contains
             call param_read('Farfield nx',meshsize); meshsize(2) = 1; meshsize(3) = 1; ! intended as 1D 
             X0=-0.5_WP*real(meshsize,WP)*dx      !< This assumes that the domain is centered on (0,0,0)
             call param_read('Farfield X0',X0(1)) !< This shifts the domain in x based on user input
-            Xend = 1.0_WP + Xs                   !< let the shock travel 1 diameter (comes from delta_x = Xend - Xs)
+            Xend = ddrop + Xs ! let the shock travel 1 drop diameter
             if(amRoot)then !> setup and run sg only on root proc
                call sgen_init(dx,meshsize,X0,sgen_group,viscG,Xs,Xend,ushock)
                !> run shock gen simulation
@@ -635,7 +682,7 @@ contains
             call MPI_BCAST(RHOG_profile,2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr) 
             call MPI_BCAST(IG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
             call MPI_BCAST(PG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
-            call MPI_BCAST(U_profile,   2*nshock+2,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+            call MPI_BCAST(U_profile,   2*nshock+1+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
 
             ! find and update shock
             shock_index = ceiling(abs(Xs - ff%cfg%xm(1))/ff%cfg%dx(1)) ! --> comes from  Loc = shock_index*dx --> shock_index = Loc/dx
@@ -730,8 +777,13 @@ contains
          do i=1,nsh_modes
             perturb=perturb+amp_modes(i)*spherical_harmonic(l_modes(i),m_modes(i),theta,phi+phase_modes(i))
          end do
-         ! Level set function for a sphere with radius 0.5 and perturbation
-         G=0.5_WP+perturb-r
+         if (dim_flag.eqv.(.false.))then ! nondimensional case
+            ! Level set function for a sphere with radius 0.5 and perturbation
+            G=0.5_WP+perturb-r
+         else ! dimensional case
+            ! Level set function for a sphere with radius 0.5*ddrop and perturbation
+            G = 0.5_WP*ddrop+perturb-r ! AS: how should we approach the perturbation in the dimensional case?
+         end if
       end function levelset_drop
    end subroutine simulation_init
    
@@ -820,9 +872,13 @@ contains
       sg%cst_visc=viscG
       ! time info
       sg%time%dtmax = time%dtmax; sg%time%dt = time%dtmax; sg%time%cflmax = time%cflmax 
-      !sg%ens_evt%tper = ens_evt%tper ! uncomment this line (and ensight lines in shockgen_class to save data files for sgen)
-      ! let the shock travel 1.0 diameter length (assume a diameter of 1.0) 
+      print*, "ddrop= ", ddrop
+      print*, "Xs= ", Xs
+      print*, "Xend= ", Xend
+      print*, "ushock= ", ushock
+      sg%ens_evt%tper = ens_evt%tper ! uncomment this line (and ensight lines in shockgen_class to save data files for sgen)
       sg%time%tmax = (Xend - Xs)/ushock    ! this is how long it will take to reach Xend
+      print*, "sgen tmax: ", sg%time%tmax
       do k=sg%cfg%kmino_,sg%cfg%kmaxo_
          do j=sg%cfg%jmino_,sg%cfg%jmaxo_
             do i=sg%cfg%imino_,sg%cfg%imaxo_
@@ -837,15 +893,14 @@ contains
       ! Initialize conserved variables
       sg%fs%Q(:,:,:,2)=sg%fs%Q(:,:,:,1)*sg%fs%I
       call sg%fs%get_momentum()
+
       ! Rebuild primitive variables
       call sg%fs%get_primitive()
       ! Interpolate velocity
       call sg%fs%interp_vel(sg%Ui,sg%Vi,sg%Wi)
       ! Compute local Mach number
       sg%Ma=sqrt(sg%Ui**2+sg%Vi**2+sg%Wi**2)/sg%fs%C
-      ! if (ens_evt%occurs()) then
-      !    call sg%output_ensight(t=sg%time%t)
-      ! end if
+      call sg%output_ensight(t=sg%time%t)
    end subroutine sgen_init
    
    subroutine update_shockprofile(rhog,pg,ig,u,rhog_profile,pg_profile,ig_profile,U_profile,IMIN,IMAX,JMIN,JMAX,KMIN,KMAX,nshock,shock_index)

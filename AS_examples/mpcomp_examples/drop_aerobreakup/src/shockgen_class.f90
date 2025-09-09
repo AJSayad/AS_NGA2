@@ -16,7 +16,6 @@ module shockgen_class
   public :: shockgen
   !> Flags
   logical :: dim_flag      ! flag for running dimensional case
-  logical :: viscous_flag  ! Flag for running viscous
 
   !> shockgen object
   type :: shockgen
@@ -26,10 +25,10 @@ module shockgen_class
      type(spcomp) :: fs        !< Multiphase compressible solver
      type(timetracker) :: time !< Time info
      !> Ensight postprocessing
-     !type(ensight)  :: ens_out
-     !type(event)    :: ens_evt
+     type(ensight)  :: ens_out
+     type(event)    :: ens_evt
      !> Simulation monitor file
-     !type(monitor) :: mfile,cflfile,consfile
+     type(monitor) :: mfile,cflfile,consfile
      !> Work arrays
      real(WP), dimension(:,:,:,:,:), allocatable :: dQdt
      real(WP), dimension(:,:,:)    , allocatable :: Ui,Vi,Wi,Ma,beta,visc
@@ -43,8 +42,8 @@ module shockgen_class
      procedure :: initialize                      !< Initialize shock-drop simulation
      procedure :: step                            !< Advance shock-drop simulation by one time step
      procedure :: finalize                        !< Finalize shock-drop simulation
-     !procedure :: output_monitor                  !< Monitoring for shock-drop case
-     !procedure :: output_ensight                  !< Ensight output for shock-drop case
+     procedure :: output_monitor                  !< Monitoring for shock-drop case
+     procedure :: output_ensight                  !< Ensight output for shock-drop case
      procedure, private :: apply_bconds           !< Apply boundary conditions 
   end type shockgen
 
@@ -63,7 +62,6 @@ contains
     
     ! read in flags
     call param_read('Dimensional flag',dim_flag)
-    call param_read('Viscous flag',viscous_flag)
     
     ! Initialize config object
     create_config: block
@@ -108,67 +106,67 @@ contains
       allocate(this%Ma(this%cfg%imino_:this%cfg%imaxo_,this%cfg%jmino_:this%cfg%jmaxo_,this%cfg%kmino_:this%cfg%kmaxo_))
     end block allocate_work_arrays
 
-   !  ! Add Ensight output
-   !  create_ensight: block
-   !    ! Create Ensight output from cfg
-   !    this%ens_out=ensight(cfg=this%cfg,name='Shockgen')
-   !    ! Add variables to output
-   !    call this%ens_out%add_vector('velocity',this%Ui,this%Vi,this%Wi)
-   !    call this%ens_out%add_scalar('RHO',this%fs%Q(:,:,:,1))
-   !    call this%ens_out%add_scalar('I',this%fs%I)
-   !    call this%ens_out%add_scalar('P',this%fs%P)
-   !    call this%ens_out%add_scalar('Mach',this%Ma)
-   !    call this%ens_out%add_scalar('beta',this%beta)
-   !    call this%ens_out%add_scalar('visc',this%visc)
-   !    call this%ens_out%add_vector('cell_vel',this%fs%U,this%fs%V,this%fs%W)
-   !    !call this%output_ensight()
-   !  end block create_ensight
+    ! Add Ensight output
+    create_ensight: block
+      ! Create Ensight output from cfg
+      this%ens_out=ensight(cfg=this%cfg,name='Shockgen')
+      ! Add variables to output
+      call this%ens_out%add_vector('velocity',this%Ui,this%Vi,this%Wi)
+      call this%ens_out%add_scalar('RHO',this%fs%Q(:,:,:,1))
+      call this%ens_out%add_scalar('I',this%fs%I)
+      call this%ens_out%add_scalar('P',this%fs%P)
+      call this%ens_out%add_scalar('Mach',this%Ma)
+      call this%ens_out%add_scalar('beta',this%beta)
+      call this%ens_out%add_scalar('visc',this%visc)
+      call this%ens_out%add_vector('cell_vel',this%fs%U,this%fs%V,this%fs%W)
+      call this%output_ensight()
+    end block create_ensight
 
-   !  ! Create monitor files
-   !  create_monitor: block
-   !    ! Create simulation monitor
-   !    this%mfile=monitor(this%fs%cfg%amRoot,'shockgen_sim')
-   !    call this%mfile%add_column(this%time%n,'Timestep number')
-   !    call this%mfile%add_column(this%time%t,'Time')
-   !    call this%mfile%add_column(this%time%dt,'Timestep size')
-   !    call this%mfile%add_column(this%time%cfl,'Maximum CFL')
-   !    call this%mfile%add_column(this%fs%Umax,'Umax')
-   !    call this%mfile%add_column(this%fs%Vmax,'Vmax')
-   !    call this%mfile%add_column(this%fs%Wmax,'Wmax')
-   !    call this%mfile%add_column(this%fs%RHOmax,'max(RHO)')
-   !    call this%mfile%add_column(this%fs%RHOmin,'min(RHO)')
-   !    call this%mfile%add_column(this%fs%Imax  ,'max(I)'  )
-   !    call this%mfile%add_column(this%fs%Imin  ,'min(I)'  )
-   !    call this%mfile%add_column(this%fs%Pmax  ,'max(P)'  )
-   !    call this%mfile%add_column(this%fs%Pmin  ,'min(P)'  )
-   !    call this%mfile%add_column(this%fs%Tmax  ,'max(T)'  )
-   !    call this%mfile%add_column(this%fs%Tmin  ,'min(T)'  )
-   !    ! Create CFL monitor
-   !    this%cflfile=monitor(this%fs%cfg%amRoot,'shockgen_cfl')
-   !    call this%cflfile%add_column(this%time%n,'Timestep number')
-   !    call this%cflfile%add_column(this%time%t,'Time')
-   !    call this%cflfile%add_column(this%fs%CFLc_x,'Convective xCFL')
-   !    call this%cflfile%add_column(this%fs%CFLc_y,'Convective yCFL')
-   !    call this%cflfile%add_column(this%fs%CFLc_z,'Convective zCFL')
-   !    call this%cflfile%add_column(this%fs%CFLa_x,'Acoustic xCFL')
-   !    call this%cflfile%add_column(this%fs%CFLa_y,'Acoustic yCFL')
-   !    call this%cflfile%add_column(this%fs%CFLa_z,'Acoustic zCFL')
-   !    call this%cflfile%add_column(this%fs%CFLv_x,'Viscous xCFL')
-   !    call this%cflfile%add_column(this%fs%CFLv_y,'Viscous yCFL')
-   !    call this%cflfile%add_column(this%fs%CFLv_z,'Viscous zCFL')
-   !    ! Create conservation monitor
-   !    this%consfile=monitor(this%fs%cfg%amRoot,'shockgen_cons')
-   !    call this%consfile%add_column(this%time%n,'Timestep number')
-   !    call this%consfile%add_column(this%time%t,'Time')
-   !    call this%consfile%add_column(this%fs%Qint(1),'Mass')
-   !    call this%consfile%add_column(this%fs%Qint(2),'Energy')
-   !    call this%consfile%add_column(this%fs%Qint(3),'U Momentum')
-   !    call this%consfile%add_column(this%fs%Qint(4),'V Momentum')
-   !    call this%consfile%add_column(this%fs%Qint(5),'W Momentum')
-   !    call this%consfile%add_column(this%fs%RHOKint,'Kinetic Energy')
-   !    call this%consfile%add_column(this%fs%RHOSint,'Entropy')
-   !    end block create_monitor
-   !    call this%output_monitor()
+    ! Create monitor files
+    create_monitor: block
+      ! Create simulation monitor
+      this%mfile=monitor(this%fs%cfg%amRoot,'shockgen_sim')
+      call this%mfile%add_column(this%time%n,'Timestep number')
+      call this%mfile%add_column(this%time%t,'Time')
+      call this%mfile%add_column(this%time%dt,'Timestep size')
+      call this%mfile%add_column(this%time%cfl,'Maximum CFL')
+      call this%mfile%add_column(this%fs%Umax,'Umax')
+      call this%mfile%add_column(this%fs%Vmax,'Vmax')
+      call this%mfile%add_column(this%fs%Wmax,'Wmax')
+      call this%mfile%add_column(this%fs%RHOmax,'max(RHO)')
+      call this%mfile%add_column(this%fs%RHOmin,'min(RHO)')
+      call this%mfile%add_column(this%fs%Imax  ,'max(I)'  )
+      call this%mfile%add_column(this%fs%Imin  ,'min(I)'  )
+      call this%mfile%add_column(this%fs%Pmax  ,'max(P)'  )
+      call this%mfile%add_column(this%fs%Pmin  ,'min(P)'  )
+      call this%mfile%add_column(this%fs%Tmax  ,'max(T)'  )
+      call this%mfile%add_column(this%fs%Tmin  ,'min(T)'  )
+      ! Create CFL monitor
+      this%cflfile=monitor(this%fs%cfg%amRoot,'shockgen_cfl')
+      call this%cflfile%add_column(this%time%n,'Timestep number')
+      call this%cflfile%add_column(this%time%t,'Time')
+      call this%cflfile%add_column(this%fs%CFLc_x,'Convective xCFL')
+      call this%cflfile%add_column(this%fs%CFLc_y,'Convective yCFL')
+      call this%cflfile%add_column(this%fs%CFLc_z,'Convective zCFL')
+      call this%cflfile%add_column(this%fs%CFLa_x,'Acoustic xCFL')
+      call this%cflfile%add_column(this%fs%CFLa_y,'Acoustic yCFL')
+      call this%cflfile%add_column(this%fs%CFLa_z,'Acoustic zCFL')
+      call this%cflfile%add_column(this%fs%CFLv_x,'Viscous xCFL')
+      call this%cflfile%add_column(this%fs%CFLv_y,'Viscous yCFL')
+      call this%cflfile%add_column(this%fs%CFLv_z,'Viscous zCFL')
+      ! Create conservation monitor
+      this%consfile=monitor(this%fs%cfg%amRoot,'shockgen_cons')
+      call this%consfile%add_column(this%time%n,'Timestep number')
+      call this%consfile%add_column(this%time%t,'Time')
+      call this%consfile%add_column(this%fs%Qint(1),'Mass')
+      call this%consfile%add_column(this%fs%Qint(2),'Energy')
+      call this%consfile%add_column(this%fs%Qint(3),'U Momentum')
+      call this%consfile%add_column(this%fs%Qint(4),'V Momentum')
+      call this%consfile%add_column(this%fs%Qint(5),'W Momentum')
+      call this%consfile%add_column(this%fs%RHOKint,'Kinetic Energy')
+      call this%consfile%add_column(this%fs%RHOSint,'Entropy')
+      end block create_monitor
+      call this%output_monitor()
   end subroutine initialize
 
   subroutine step(this)
@@ -185,10 +183,8 @@ contains
       ! Prepare SGS viscosity models
       ! Get LAD
       call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta)
-      if(viscous_flag.eqv.(.true.))then ! only get vreman model if we're running viscous
-         ! Get eddy viscosity
-         call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
-      end if
+      ! Get eddy viscosity
+      call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
 
       ! First RK step ====================================================================================
       ! Get non-SL RHS and increment
@@ -223,8 +219,8 @@ contains
 
       ! Compute local Mach number
       this%Ma=sqrt(this%Ui**2+this%Vi**2+this%Wi**2)/this%fs%C
-      !call this%output_monitor()
-      !call this%output_ensight()
+      call this%output_monitor()
+      call this%output_ensight()
   end subroutine step
 
   !> Finalize shockgenerator simulation (get shock profile for simulation.f90)
@@ -355,25 +351,25 @@ contains
       
    end subroutine apply_bconds
 
-!   !> Perform and output monitoring for the shock generator problem
-!   subroutine output_monitor(this)
-!     implicit none
-!     class(shockgen), intent(inout) :: this
-!     call this%fs%get_info()
-!     call this%mfile%write()
-!     call this%cflfile%write()
-!     call this%consfile%write()
-!   end subroutine output_monitor
-!   !> Output ensight files for the shock generator problem
-!   subroutine output_ensight(this,t)
-!     implicit none
-!     class(shockgen), intent(inout) :: this
-!     real(WP), intent(in), optional :: t
-!     if (present(t)) then
-!        call this%ens_out%write_data(t)
-!     else
-!        call this%ens_out%write_data(this%time%t)
-!     end if
-!   end subroutine output_ensight
+  !> Perform and output monitoring for the shock generator problem
+  subroutine output_monitor(this)
+    implicit none
+    class(shockgen), intent(inout) :: this
+    call this%fs%get_info()
+    call this%mfile%write()
+    call this%cflfile%write()
+    call this%consfile%write()
+  end subroutine output_monitor
+  !> Output ensight files for the shock generator problem
+  subroutine output_ensight(this,t)
+    implicit none
+    class(shockgen), intent(inout) :: this
+    real(WP), intent(in), optional :: t
+    if (present(t)) then
+       call this%ens_out%write_data(t)
+    else
+       call this%ens_out%write_data(this%time%t)
+    end if
+  end subroutine output_ensight
 
 end module shockgen_class

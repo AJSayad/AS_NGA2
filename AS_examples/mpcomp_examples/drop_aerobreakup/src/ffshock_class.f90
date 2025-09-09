@@ -61,6 +61,7 @@ contains
    !> Initialization of a far-field shock problem
    subroutine initialize(this,dx,meshsize,startloc,group,partition)
       use mpi_f08, only: MPI_Group
+      use param,    only: param_read
       implicit none
       class(ffshock), intent(inout) :: this
       real(WP), intent(in) :: dx
@@ -68,7 +69,7 @@ contains
       real(WP), dimension(3), intent(in) :: startloc
       type(MPI_Group)       , intent(in) :: group
       integer , dimension(3), intent(in) :: partition
-      
+
       ! Initialize config object
       create_config: block
          use sgrid_class, only: cartesian,sgrid

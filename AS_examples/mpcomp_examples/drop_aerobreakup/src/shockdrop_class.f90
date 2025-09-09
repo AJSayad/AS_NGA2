@@ -203,6 +203,7 @@ contains
    !> Initialization of a shock-drop problem
    subroutine initialize(this,dx,meshsize,startloc,group,partition,continue_monitor)
       use mpi_f08, only: MPI_Group
+      use param,    only: param_read
       implicit none
       class(shockdrop), intent(inout) :: this
       real(WP), intent(in) :: dx
@@ -212,7 +213,7 @@ contains
       integer , dimension(3), intent(in) :: partition
       logical , optional    , intent(in) :: continue_monitor
       logical :: monitor_continue
-      
+
       ! Check if this shockdrop is a continuation, coming from remeshing
       is_monitor_continued: block
          monitor_continue=.false.; if (present(continue_monitor)) monitor_continue=continue_monitor
