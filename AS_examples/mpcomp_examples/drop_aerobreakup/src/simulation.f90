@@ -777,13 +777,8 @@ contains
          do i=1,nsh_modes
             perturb=perturb+amp_modes(i)*spherical_harmonic(l_modes(i),m_modes(i),theta,phi+phase_modes(i))
          end do
-         if (dim_flag.eqv.(.false.))then ! nondimensional case
-            ! Level set function for a sphere with radius 0.5 and perturbation
-            G=0.5_WP+perturb-r
-         else ! dimensional case
-            ! Level set function for a sphere with radius 0.5*ddrop and perturbation
-            G = 0.5_WP*ddrop+perturb-r ! AS: how should we approach the perturbation in the dimensional case?
-         end if
+         ! Level set function for a sphere with radius 0.5*ddrop and perturbation
+         G = 0.5_WP*ddrop+perturb-r ! AS: how should we approach the perturbation in the dimensional case?
       end function levelset_drop
    end subroutine simulation_init
    
