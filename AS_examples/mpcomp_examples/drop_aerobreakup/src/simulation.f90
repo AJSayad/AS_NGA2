@@ -350,7 +350,7 @@ contains
             u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2)                      ! post-shock gas velocity and post shock Mach number
             u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)                          ! set pre-shock gas velocity to zero and update pre-shock Mach number
             ! compute some non-dimensional parameters for log files
-            rho_ratio=rho2/rho1                                       ! density ratio
+            rho_ratio=rhoL/rho1                                       ! density ratio
             visc_ratio=viscL/viscG                                    ! viscosity ratio
             ReG = rho2*u2*ddrop/viscG                                 ! Reynolds number based on post-shock conditions
             c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1) ! sound speed ratio
