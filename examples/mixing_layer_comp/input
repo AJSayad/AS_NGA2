@@ -1,0 +1,40 @@
+# Parallelization
+Partition : 8 1 1
+
+# Mesh definition
+Lx : 100
+Ly : 100
+Lz : 100
+nx : 512  !128
+ny : 512  !128
+nz : 1    !128
+
+# Fluid properties
+Gamma :               1.4
+Mach number :         5.0
+Reynolds number :     200
+Prandtl number :      0.7
+Bulk to shear ratio : 0.6
+
+# Layer densities
+Density top :       1
+Density bottom :    1
+Density thickness : 1
+
+# Do we use SGS modeling
+Use SGS model : .true.
+
+# Disturbance amplitude
+Wave amplitude : 1e-1
+
+# Time integration
+Max timestep size : 0.25
+Max cfl number :    0.9
+Subiterations :     50
+
+# Pressure solver
+Pressure tolerance : 1e-6
+Pressure iteration : 100
+
+# Ensight output
+Ensight output period : 5

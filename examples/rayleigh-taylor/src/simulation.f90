@@ -2,6 +2,8 @@
 module simulation
    use precision,         only: WP
    use geometry,          only: cfg
+   use fft2d_class,       only: fft2d
+   use ddadi_class,       only: ddadi
    use lowmach_class,     only: lowmach
    use vdscalar_class,    only: vdscalar
    use timetracker_class, only: timetracker
@@ -10,8 +12,12 @@ module simulation
    use monitor_class,     only: monitor
    implicit none
    private
+   public :: simulation_init,simulation_run,simulation_final
    
    !> Single low Mach flow solver and scalar solver and corresponding time tracker
+   type(fft2d),       public :: ps
+   type(ddadi),       public :: vs
+   type(ddadi),       public :: ss
    type(lowmach),     public :: fs
    type(vdscalar),    public :: sc
    type(timetracker), public :: time
@@ -22,8 +28,6 @@ module simulation
    
    !> Simulation monitor file
    type(monitor) :: mfile,cflfile,consfile
-   
-   public :: simulation_init,simulation_run,simulation_final
    
    !> Private work arrays
    real(WP), dimension(:,:,:), allocatable :: resU,resV,resW,resSC
@@ -60,34 +64,35 @@ contains
       use param, only: param_read
       implicit none
       
-      ! Read in the EOS info
-      !call param_read('Min density',rho_min)
-      !call param_read('Max density',rho_max)
       
-      ! Create an incompressible flow solver with bconds
-      create_solver: block
-         use ils_class, only: pcg_amg,pfmg
-         real(WP) :: visc
-         ! Create flow solver
-         fs=lowmach(cfg=cfg,name='Variable density low Mach NS')
-         ! Assign constant viscosity
-         call param_read('Dynamic viscosity',visc); fs%visc=visc
-         ! Assign acceleration of gravity
-         call param_read('Gravity',fs%gravity)
-         ! Configure pressure solver
-         call param_read('Pressure iteration',fs%psolv%maxit)
-         call param_read('Pressure tolerance',fs%psolv%rcvg)
-         ! Configure implicit velocity solver
-         call param_read('Implicit iteration',fs%implicit%maxit)
-         call param_read('Implicit tolerance',fs%implicit%rcvg)
-         ! Setup the solver
-         call fs%setup(pressure_ils=pcg_amg,implicit_ils=pfmg)
-      end block create_solver
+      ! Allocate work arrays
+      allocate_work_arrays: block
+         ! Flow solver
+         allocate(resU(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+         allocate(resV(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+         allocate(resW(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+         allocate(Ui  (cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+         allocate(Vi  (cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+         allocate(Wi  (cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+         ! Scalar solver
+         allocate(resSC(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+      end block allocate_work_arrays
+      
+      
+      ! Initialize time tracker with 2 subiterations
+      initialize_timetracker: block
+         time=timetracker(amRoot=cfg%amRoot)
+         call param_read('Max timestep size',time%dtmax)
+         call param_read('Max cfl number',time%cflmax)
+         time%dt=time%dtmax
+         call param_read('Max time',time%tmax)
+         time%dt=time%dtmax
+         call param_read('Subiterations',time%itmax,default=2)
+      end block initialize_timetracker
       
       
       ! Create a scalar solver
       create_scalar: block
-         use ils_class,      only: gmres
          use vdscalar_class, only: dirichlet,neumann,quick
          real(WP) :: diffusivity
          ! Create scalar solver
@@ -96,34 +101,28 @@ contains
          call param_read('Dynamic diffusivity',diffusivity)
          sc%diff=diffusivity
          ! Configure implicit scalar solver
-         sc%implicit%maxit=fs%implicit%maxit; sc%implicit%rcvg=fs%implicit%rcvg
+         ss=ddadi(cfg=cfg,name='Scalar',nst=13)
          ! Setup the solver
-         call sc%setup(implicit_ils=gmres)
+         call sc%setup(implicit_solver=ss)
       end block create_scalar
       
       
-      ! Allocate work arrays
-      allocate_work_arrays: block
-         ! Flow solver
-         allocate(resU(fs%cfg%imino_:fs%cfg%imaxo_,fs%cfg%jmino_:fs%cfg%jmaxo_,fs%cfg%kmino_:fs%cfg%kmaxo_))
-         allocate(resV(fs%cfg%imino_:fs%cfg%imaxo_,fs%cfg%jmino_:fs%cfg%jmaxo_,fs%cfg%kmino_:fs%cfg%kmaxo_))
-         allocate(resW(fs%cfg%imino_:fs%cfg%imaxo_,fs%cfg%jmino_:fs%cfg%jmaxo_,fs%cfg%kmino_:fs%cfg%kmaxo_))
-         allocate(Ui  (fs%cfg%imino_:fs%cfg%imaxo_,fs%cfg%jmino_:fs%cfg%jmaxo_,fs%cfg%kmino_:fs%cfg%kmaxo_))
-         allocate(Vi  (fs%cfg%imino_:fs%cfg%imaxo_,fs%cfg%jmino_:fs%cfg%jmaxo_,fs%cfg%kmino_:fs%cfg%kmaxo_))
-         allocate(Wi  (fs%cfg%imino_:fs%cfg%imaxo_,fs%cfg%jmino_:fs%cfg%jmaxo_,fs%cfg%kmino_:fs%cfg%kmaxo_))
-         ! Scalar solver
-         allocate(resSC(sc%cfg%imino_:sc%cfg%imaxo_,sc%cfg%jmino_:sc%cfg%jmaxo_,sc%cfg%kmino_:sc%cfg%kmaxo_))
-      end block allocate_work_arrays
-      
-      
-      ! Initialize time tracker with 2 subiterations
-      initialize_timetracker: block
-         time=timetracker(amRoot=fs%cfg%amRoot)
-         call param_read('Max timestep size',time%dtmax)
-         call param_read('Max cfl number',time%cflmax)
-         time%dt=time%dtmax
-         time%itmax=2
-      end block initialize_timetracker
+      ! Create a low-mach flow solver
+      create_solver: block
+         real(WP) :: visc
+         ! Create flow solver
+         fs=lowmach(cfg=cfg,name='Variable density low Mach NS')
+         ! Assign constant viscosity
+         call param_read('Dynamic viscosity',visc); fs%visc=visc
+         ! Assign acceleration of gravity
+         call param_read('Gravity',fs%gravity)
+         ! Configure pressure solver
+         ps=fft2d(cfg=cfg,name='Pressure',nst=7)
+         ! Configure implicit velocity solver
+         vs=ddadi(cfg=cfg,name='Velocity',nst=7)
+         ! Setup the solver
+         call fs%setup(pressure_solver=ps,implicit_solver=vs)
+      end block create_solver
       
       
       ! Initialize our temperature field
@@ -317,7 +316,6 @@ contains
             fs%W=2.0_WP*fs%W-fs%Wold+resW
             
             ! Apply other boundary conditions and update momentum
-            call fs%apply_bcond(time%tmid,time%dtmid)
             call fs%rho_multiply()
             call fs%apply_bcond(time%tmid,time%dtmid)
             

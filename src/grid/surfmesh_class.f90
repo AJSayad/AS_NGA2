@@ -23,6 +23,7 @@ module surfmesh_class
    contains
       procedure :: reset                                   !< Reset surface mesh to zero size
       procedure :: set_size                                !< Set surface mesh to provided size
+      procedure :: finalize                                !< Finalize surfmesh object
    end type surfmesh
    
    
@@ -348,6 +349,17 @@ contains
       allocate(this%polySize(this%nPoly))
       allocate(this%var     (this%nvar,this%nPoly))
    end subroutine set_size
+   
+   
+   !> Finalize surfmesh
+   subroutine finalize(this)
+      implicit none
+      class(surfmesh), intent(inout) :: this
+      call this%reset()
+      this%nvar=0
+      if (allocated(this%varname)) deallocate(this%varname)
+      this%name='UNNAMED_SURFMESH'
+   end subroutine finalize
    
    
 end module surfmesh_class

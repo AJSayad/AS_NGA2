@@ -2993,17 +2993,13 @@ contains
    
    !> Shift pressure to ensure zero average
    subroutine shift_p(this,pressure)
-      use mpi_f08,  only: MPI_SUM,MPI_ALLREDUCE
-      use parallel, only: MPI_REAL_WP
       implicit none
       class(tpns), intent(in) :: this
       real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(inout) :: pressure !< Needs to be (imino_:imaxo_,jmino_:jmaxo_,kmino_:kmaxo_)
       real(WP) :: pressure_tot
       integer :: i,j,k
-      
       ! Compute volume-averaged pressure
       call this%cfg%integrate(A=pressure,integral=pressure_tot); pressure_tot=pressure_tot/this%cfg%fluid_vol
-      
       ! Shift the pressure
       do k=this%cfg%kmin_,this%cfg%kmax_
          do j=this%cfg%jmin_,this%cfg%jmax_
@@ -3013,7 +3009,6 @@ contains
          end do
       end do
       call this%cfg%sync(pressure)
-      
    end subroutine shift_p
    
    
