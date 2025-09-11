@@ -324,7 +324,7 @@ contains
             CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
             ! Viscous parameters
             call param_read('Gas Reynolds number',ReG); viscG=rho1*1.0_WP*u2/ReG 
-            call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG
+            call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG/rho_ratio
             if (visc_ratio.eq.0.0_WP)then ! if visc_ratio is zero, we are running inviscid 
                viscL=0.0_WP; viscG=0.0_WP
             end if
