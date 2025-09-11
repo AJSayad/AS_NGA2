@@ -13,7 +13,8 @@ module sgsmodel_class
    ! List of SGS LES models available
    integer, parameter, public :: dynamic_smag =1    !< Dynamic Smagorinsky
    integer, parameter, public :: constant_smag=2    !< Constant Smagorinsky 
-   integer, parameter, public :: vreman       =3    !< Vreman 2004 
+   integer, parameter, public :: vreman       =3    !< Vreman 2004
+   integer, parameter, public :: localartif   =4    !< Localized artificial bulk viscosity model
    
    !> SGS model object definition
    type :: sgsmodel
@@ -24,9 +25,10 @@ module sgsmodel_class
       ! Safe index bounds
       integer :: imin_in,jmin_in,kmin_in                        !< Safe min in each direction
       integer :: imax_in,jmax_in,kmax_in                        !< Safe max in each direction
-
-      ! Some clipping parameters
+      
+      ! Some model parameters
       real(WP) :: Cs_ref=0.17_WP
+      real(WP) :: Cartif=2.0_WP,Cartif_vort=1.0e2_WP
       
       ! LM and MM tensor norms and eddy viscosity
       real(WP), dimension(:,:,:), allocatable :: LM,MM          !< LM and MM tensor norms
@@ -49,7 +51,8 @@ module sgsmodel_class
       procedure :: get_visc                                     !< Calls appropriate eddy viscosity subroutine
       procedure :: visc_dynamic                                 !< Calculate the SGS viscosity (Dynamic Smag)
       procedure :: visc_cst                                     !< Calculate the SGS viscosity (Constant Smag)
-      procedure :: visc_vreman                                  !< Calculate the SGS viscosity (Vreman 2004)      
+      procedure :: visc_vreman                                  !< Calculate the SGS viscosity (Vreman 2004)
+      procedure :: visc_artif                                   !< Calculate the artificial bulk viscosity
       
    end type sgsmodel
    
@@ -121,7 +124,7 @@ contains
       do k=self%cfg%kmin_  ,self%cfg%kmax_
          do j=self%cfg%jmin_-1,self%cfg%jmax_+1
             do i=self%cfg%imin_-1,self%cfg%imax_+1
-               zfilter(-1,i,j,k)=(-0.5_WP*(self%cfg%dzm(k+1)-self%cfg%dzm(k))-(self%cfg%dzm(k+1)-self%cfg%dzm(k))**2/(6.0_WP*self%cfg%dzm(k  ))+self%cfg%dzm(k+1)/3.0_WP)/(self%cfg%dxm(k+1)+self%cfg%dzm(k))
+               zfilter(-1,i,j,k)=(-0.5_WP*(self%cfg%dzm(k+1)-self%cfg%dzm(k))-(self%cfg%dzm(k+1)-self%cfg%dzm(k))**2/(6.0_WP*self%cfg%dzm(k  ))+self%cfg%dzm(k+1)/3.0_WP)/(self%cfg%dzm(k+1)+self%cfg%dzm(k))
                zfilter( 0,i,j,k)=2.0_WP/3.0_WP+(self%cfg%dzm(k+1)-self%cfg%dzm(k))**2/(6.0_WP*self%cfg%dzm(k+1)*self%cfg%dzm(k))
                zfilter(+1,i,j,k)=(+0.5_WP*(self%cfg%dzm(k+1)-self%cfg%dzm(k))-(self%cfg%dzm(k+1)-self%cfg%dzm(k))**2/(6.0_WP*self%cfg%dzm(k+1))+self%cfg%dzm(k  )/3.0_WP)/(self%cfg%dzm(k+1)+self%cfg%dzm(k))
                if (self%cfg%VF(i,j,k-1).eq.0.0_WP) then
@@ -191,7 +194,7 @@ contains
       do k=self%cfg%kmin_  ,self%cfg%kmax_
          do j=self%cfg%jmin_-1,self%cfg%jmax_+1
             do i=self%cfg%imin_-1,self%cfg%imax_+1
-               zfilter(-1,i,j,k)=(-0.5_WP*(self%cfg%dzm(k+1)-self%cfg%dzm(k))-(self%cfg%dzm(k+1)-self%cfg%dzm(k))**2/(6.0_WP*self%cfg%dzm(k  ))+self%cfg%dzm(k+1)/3.0_WP)/(self%cfg%dxm(k+1)+self%cfg%dzm(k))
+               zfilter(-1,i,j,k)=(-0.5_WP*(self%cfg%dzm(k+1)-self%cfg%dzm(k))-(self%cfg%dzm(k+1)-self%cfg%dzm(k))**2/(6.0_WP*self%cfg%dzm(k  ))+self%cfg%dzm(k+1)/3.0_WP)/(self%cfg%dzm(k+1)+self%cfg%dzm(k))
                zfilter( 0,i,j,k)=2.0_WP/3.0_WP+(self%cfg%dzm(k+1)-self%cfg%dzm(k))**2/(6.0_WP*self%cfg%dzm(k+1)*self%cfg%dzm(k))
                zfilter(+1,i,j,k)=(+0.5_WP*(self%cfg%dzm(k+1)-self%cfg%dzm(k))-(self%cfg%dzm(k+1)-self%cfg%dzm(k))**2/(6.0_WP*self%cfg%dzm(k+1))+self%cfg%dzm(k  )/3.0_WP)/(self%cfg%dzm(k+1)+self%cfg%dzm(k))
                if (wmask(i,j,k).eq.1) then
@@ -257,45 +260,47 @@ contains
    
    !> Calls appropriate eddy viscosity subroutine according to SGSmodel%type
    subroutine get_visc(this,type,dt,rho,Ui,Vi,Wi,SR,gradu)
-     use messager, only: die
-     use param, only: verbose
-     implicit none
-     class(sgsmodel), intent(inout) :: this
-     integer, intent(in) :: type !< Model type
-     real(WP), intent(in) :: dt !< dt since the last call to the model
-     real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in) :: rho !< Density including all ghosts
-     real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in), optional :: Ui  !< Interpolated velocities including all ghosts
-     real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in), optional :: Vi  !< Interpolated velocities including all ghosts
-     real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in), optional :: Wi  !< Interpolated velocities including all ghosts
-     real(WP), dimension(1:,this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in), optional :: SR  !< Strain rate tensor
-     real(WP), dimension(1:,1:,this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in), optional :: gradu !< Velocity gradient tensor
-
-     select case(type)
-     case(dynamic_smag)
-        if (.not.present(Ui).or..not.(present(Vi)).or..not.present(Wi).or..not.present(SR)) &
-             call die('[sgs get_visc] Dynamic Smagorinsky model requires Ui, Vi, Wi, and SR')
-        call this%visc_dynamic(dt,rho,Ui,Vi,Wi,SR)
-     case(constant_smag)
-        if (.not.present(SR)) call die('[sgs get_visc] Constant Smagorinsky model requires SR')
-        call this%visc_cst(rho,SR)
-     case(vreman)
-        if (.not.present(gradu)) call die('[sgs get_visc] Vreman model requires gradu')
-        call this%visc_vreman(rho,gradu)
-     end select
-
-     ! Calculate some info on the model
-     calc_info: block
-       use mpi_f08,  only: MPI_ALLREDUCE,MPI_MAX,MPI_MIN
-       use parallel, only: MPI_REAL_WP
-       integer :: ierr
-       call MPI_ALLREDUCE(maxval(this%visc),this%max_visc,1,MPI_REAL_WP,MPI_MAX,this%cfg%comm,ierr)
-       call MPI_ALLREDUCE(minval(this%visc),this%min_visc,1,MPI_REAL_WP,MPI_MIN,this%cfg%comm,ierr)
-     end block calc_info
+      use messager, only: die
+      use param, only: verbose
+      implicit none
+      class(sgsmodel), intent(inout) :: this
+      integer, intent(in) :: type !< Model type
+      real(WP), intent(in) :: dt !< dt since the last call to the model
+      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in) :: rho !< Density including all ghosts
+      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in), optional :: Ui  !< Interpolated velocities including all ghosts
+      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in), optional :: Vi  !< Interpolated velocities including all ghosts
+      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in), optional :: Wi  !< Interpolated velocities including all ghosts
+      real(WP), dimension(1:,this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in), optional :: SR  !< Strain rate tensor
+      real(WP), dimension(1:,1:,this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in), optional :: gradu !< Velocity gradient tensor
       
-     ! Output info about model
-     if (verbose.gt.0) call this%log()
-     if (verbose.gt.1) call this%print()
-
+      select case(type)
+      case(dynamic_smag)
+         if (.not.present(Ui).or..not.(present(Vi)).or..not.present(Wi).or..not.present(SR)) call die('[sgs get_visc] Dynamic Smagorinsky model requires Ui, Vi, Wi, and SR')
+         call this%visc_dynamic(dt,rho,Ui,Vi,Wi,SR)
+      case(constant_smag)
+         if (.not.present(SR)) call die('[sgs get_visc] Constant Smagorinsky model requires SR')
+         call this%visc_cst(rho,SR)
+      case(vreman)
+         if (.not.present(gradu)) call die('[sgs get_visc] Vreman model requires gradu')
+         call this%visc_vreman(rho,gradu)
+      case(localartif)
+         if (.not.present(gradu)) call die('[sgs get_visc] Artifical viscosity model requires gradu')
+         call this%visc_artif(dt,rho,gradu)
+      end select
+      
+      ! Calculate some info on the model
+      calc_info: block
+         use mpi_f08,  only: MPI_ALLREDUCE,MPI_MAX,MPI_MIN
+         use parallel, only: MPI_REAL_WP
+         integer :: ierr
+         call MPI_ALLREDUCE(maxval(this%visc),this%max_visc,1,MPI_REAL_WP,MPI_MAX,this%cfg%comm,ierr)
+         call MPI_ALLREDUCE(minval(this%visc),this%min_visc,1,MPI_REAL_WP,MPI_MIN,this%cfg%comm,ierr)
+      end block calc_info
+      
+      ! Output info about model
+      if (verbose.gt.0) call this%log()
+      if (verbose.gt.1) call this%print()
+      
    end subroutine get_visc
    
    
@@ -470,7 +475,7 @@ contains
       ! Model constant is c=2.5*Cs_ref**2
       ! Vreman uses c=0.07 which corresponds to Cs_ref=0.17
       C=2.5_WP*this%Cs_ref**2
-
+      
       ! Compute the eddy viscosity
       do k=this%cfg%kmin_,this%cfg%kmax_
          do j=this%cfg%jmin_,this%cfg%jmax_
@@ -505,6 +510,56 @@ contains
       call this%cfg%sync(this%visc)
       
    end subroutine visc_vreman
+
+
+   !> Get artifical bulk viscosity
+   subroutine visc_artif(this,dt,rho,gradu)
+      implicit none
+      class(sgsmodel), intent(inout) :: this
+      real(WP), intent(in) :: dt       !< dt for the coming iteration
+      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in) :: rho         !< Density including all ghosts
+      real(WP), dimension(1:,1:,this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(in) :: gradu !< Velocity gradient tensor
+      real(WP), dimension(:,:,:), allocatable :: fvisc
+      integer :: i,j,k
+      real(WP) :: dila,vort,grad_dila
+      real(WP), parameter :: max_cfl=1.0_WP
+      ! Zero out array
+      this%visc=0.0_WP
+      ! Compute artificial bulk viscosity based on gradU provided
+      do k=this%cfg%kmin_,this%cfg%kmax_
+         do j=this%cfg%jmin_,this%cfg%jmax_
+            do i=this%cfg%imin_,this%cfg%imax_
+               ! Compute dilatation
+               dila=gradu(1,1,i,j,k)+gradu(2,2,i,j,k)+gradu(3,3,i,j,k)
+               ! Only work in compression regions
+               if (dila.ge.0.0_WP) cycle
+               ! Compute vorticity
+               vort=(gradu(2,3,i,j,k)-gradu(3,2,i,j,k))**2+(gradu(3,1,i,j,k)-gradu(1,3,i,j,k))**2+(gradu(1,2,i,j,k)-gradu(2,1,i,j,k))**2
+               ! Compute |grad(dila)|
+               grad_dila=max(abs(this%cfg%dxmi(i+1)*((gradu(1,1,i+1,j,k)+gradu(2,2,i+1,j,k)+gradu(3,3,i+1,j,k))-dila)),abs(this%cfg%dxmi(i)*(dila-(gradu(1,1,i-1,j,k)+gradu(2,2,i-1,j,k)+gradu(3,3,i-1,j,k)))))*this%cfg%dx(i)**3&
+               &        +max(abs(this%cfg%dymi(j+1)*((gradu(1,1,i,j+1,k)+gradu(2,2,i,j+1,k)+gradu(3,3,i,j+1,k))-dila)),abs(this%cfg%dymi(j)*(dila-(gradu(1,1,i,j-1,k)+gradu(2,2,i,j-1,k)+gradu(3,3,i,j-1,k)))))*this%cfg%dy(j)**3&
+               &        +max(abs(this%cfg%dzmi(k+1)*((gradu(1,1,i,j,k+1)+gradu(2,2,i,j,k+1)+gradu(3,3,i,j,k+1))-dila)),abs(this%cfg%dzmi(k)*(dila-(gradu(1,1,i,j,k-1)+gradu(2,2,i,j,k-1)+gradu(3,3,i,j,k-1)))))*this%cfg%dz(k)**3
+               ! Estimate artificial kinematic viscosity using grad(dila)
+               this%visc(i,j,k)=this%Cartif*rho(i,j,k)*grad_dila*dila**2/(dila**2+this%Cartif_vort*vort)
+               ! Clip it so CFL<max_CFL
+               this%visc(i,j,k)=min(this%visc(i,j,k),max_cfl*min(this%cfg%dx(i)**2,this%cfg%dy(j)**2,this%cfg%dz(k)**2)*rho(i,j,k)/(4.0_WP*dt))
+            end do
+         end do
+      end do
+      call this%cfg%sync(this%visc)
+      if (.not.this%cfg%xper) then
+         if (this%cfg%iproc.eq.1)            this%visc(this%cfg%imin-1,:,:)=this%visc(this%cfg%imin,:,:)
+         if (this%cfg%iproc.eq.this%cfg%npx) this%visc(this%cfg%imax+1,:,:)=this%visc(this%cfg%imax,:,:)
+      end if
+      if (.not.this%cfg%yper) then
+         if (this%cfg%jproc.eq.1)            this%visc(:,this%cfg%jmin-1,:)=this%visc(:,this%cfg%jmin,:)
+         if (this%cfg%jproc.eq.this%cfg%npy) this%visc(:,this%cfg%jmax+1,:)=this%visc(:,this%cfg%jmax,:)
+      end if
+      if (.not.this%cfg%zper) then
+         if (this%cfg%kproc.eq.1)            this%visc(:,:,this%cfg%kmin-1)=this%visc(:,:,this%cfg%kmin)
+         if (this%cfg%kproc.eq.this%cfg%npz) this%visc(:,:,this%cfg%kmax+1)=this%visc(:,:,this%cfg%kmax)
+      end if
+   end subroutine visc_artif
    
    
    !> Log info for model

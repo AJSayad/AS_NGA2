@@ -16,8 +16,7 @@ module simulation
    
    !> Single two-phase flow solver and volume fraction solver and corresponding time tracker
    type(hypre_str),   public :: ps
-   !type(ddadi),       public :: vs
-   type(hypre_str),   public :: vs
+   type(ddadi),       public :: vs
    type(tpns),        public :: fs
    type(vfs),         public :: vf
    type(timetracker), public :: time
@@ -39,7 +38,7 @@ module simulation
    !> Problem definition and post-processing
    real(WP), dimension(3) :: Cdrop_init
    real(WP) :: Rdrop,Rdrop_init,Rdrop_eq,Rwet_eq
-   real(WP) :: height,R_wet,CArad,CAdeg,CLvel,C,alpha,beta_cst
+   real(WP) :: height,R_wet,CArad,CAdeg,CLvel,C,alpha,Lslip
    reaL(WP), dimension(:), allocatable :: all_time,all_rwet
    type(monitor) :: ppfile
    
@@ -301,8 +300,8 @@ contains
          fs%sigma=1.0_WP; call param_read('CA',fs%contact_angle); fs%contact_angle=fs%contact_angle*Pi/180.0_WP
          ! Assign constant viscosity to each phase
          call param_read('Oh',fs%visc_l); call param_read('Viscosity ratio',fs%visc_g); fs%visc_g=fs%visc_l/fs%visc_g
-         ! Read in slip velocity constant
-         call param_read('Slip velocity constant',beta_cst)
+         ! Read in slip length
+         call param_read('Slip length',Lslip)
          ! Setup boundary conditions
          call fs%add_bcond(name='bc_xp',type=clipped_neumann,face='x',dir=+1,canCorrect=.true.,locator=xp_locator)
          call fs%add_bcond(name='bc_xm',type=clipped_neumann,face='x',dir=-1,canCorrect=.true.,locator=xm_locator)
@@ -314,9 +313,7 @@ contains
          call param_read('Pressure iteration',ps%maxit)
          call param_read('Pressure tolerance',ps%rcvg)
          ! Configure implicit velocity solver
-         !vs=ddadi(cfg=cfg,name='Velocity',nst=7)
-         vs=hypre_str(cfg=cfg,name='Velocity',method=pcg_pfmg2,nst=7)
-         vs%maxlevel=ps%maxlevel; vs%maxit=ps%maxit; vs%rcvg=ps%rcvg
+         vs=ddadi(cfg=cfg,name='Velocity',nst=7)
          ! Setup the solver
          call fs%setup(pressure_solver=ps,implicit_solver=vs)
          ! Zero initial field
@@ -439,7 +436,7 @@ contains
    
    !> Perform an NGA2 simulation - this mimicks NGA's old time integration for multiphase
    subroutine simulation_run
-      use tpns_class, only: static_contact,arithmetic_visc
+      use tpns_class, only: arithmetic_visc
       implicit none
       
       ! Perform time integration
@@ -466,22 +463,6 @@ contains
          
          ! VOF solver step
          call vf%advance(dt=time%dt,U=fs%U,V=fs%V,W=fs%W)
-         
-         ! Put back no-slip here
-         !no_slip: block
-         !   integer :: i,j,k
-         !   do k=fs%cfg%kmin_,fs%cfg%kmax_+1
-         !      do j=fs%cfg%jmin_,fs%cfg%jmax_+1
-         !         do i=fs%cfg%imin_,fs%cfg%imax_+1
-         !            ! Check if there is a wall in y-
-         !            if (fs%mask(i,j-1,k).eq.1.and.fs%mask(i-1,j-1,k).eq.1) fs%U(i,j-1,k)=0.0_WP
-         !            if (fs%mask(i,j-1,k).eq.1.and.fs%mask(i,j-1,k-1).eq.1) fs%W(i,j-1,k)=0.0_WP
-         !            if (fs%mask(i,j-1,k).eq.1.and.fs%mask(i-1,j-1,k).eq.1) fs%Uold(i,j-1,k)=0.0_WP
-         !            if (fs%mask(i,j-1,k).eq.1.and.fs%mask(i,j-1,k-1).eq.1) fs%Wold(i,j-1,k)=0.0_WP
-         !         end do
-         !      end do
-         !   end do
-         !end block no_slip
          
          ! Prepare new staggered viscosity (at n+1)
          call fs%get_viscosity(vf=vf,strat=arithmetic_visc)
@@ -520,7 +501,7 @@ contains
             call fs%update_laplacian()
             call fs%correct_mfr()
             call fs%get_div()
-            call fs%add_surface_tension_jump(dt=time%dt,div=fs%div,vf=vf)!,contact_model=static_contact)
+            call fs%add_surface_tension_jump(dt=time%dt,div=fs%div,vf=vf)
             fs%psolv%rhs=-fs%cfg%vol*fs%div/time%dt
             fs%psolv%sol=0.0_WP
             call fs%psolv%solve()
@@ -657,13 +638,17 @@ contains
    !> Subroutine that updates the slip velocity based on contact line model
    subroutine contact_slip()
       use irl_fortran_interface
+      use mathtools, only: normalize
       implicit none
       integer :: i,j,k
-      real(WP), dimension(3) :: nw
-      real(WP) :: mysurf,mycos,cos_contact_angle,beta
+      real(WP), dimension(3) :: nw,mynorm
+      real(WP) :: mysurf,mycos,cos_contact_angle,coeff
       
       ! Precalculate cos(contact angle)
       cos_contact_angle=cos(fs%contact_angle)
+      
+      ! Precalculate Cox-Voinov coefficient
+      coeff=fs%contact_angle**2/(3.0_WP*sin(fs%contact_angle)*log(fs%cfg%min_meshsize/Lslip))
       
       ! Loop over domain and identify cells that require contact angle model
       do k=fs%cfg%kmin_,fs%cfg%kmax_+1
@@ -679,12 +664,15 @@ contains
                   ! Handle U-slip
                   mysurf=abs(calculateVolume(vf%interface_polygon(1,i-1,j,k)))+abs(calculateVolume(vf%interface_polygon(1,i,j,k)))
                   if (mysurf.gt.0.0_WP.and.fs%umask(i,j,k).eq.0) then
-                     ! Surface-averaged local cos(CA)
-                     mycos=(abs(calculateVolume(vf%interface_polygon(1,i-1,j,k)))*dot_product(calculateNormal(vf%interface_polygon(1,i-1,j,k)),nw)+&
-                     &      abs(calculateVolume(vf%interface_polygon(1,i  ,j,k)))*dot_product(calculateNormal(vf%interface_polygon(1,i  ,j,k)),nw))/mysurf
-                     ! Apply slip velocity
-                     beta=beta_cst*fs%cfg%dx(i)
-                     fs%U(i,j-1,k)=beta*fs%sigma*(mycos-cos_contact_angle)*sum(fs%divu_x(:,i,j,k)*vf%VF(i-1:i,j,k))
+                     ! Surface-averaged local normal
+                     mynorm=normalize(abs(calculateVolume(vf%interface_polygon(1,i-1,j,k)))*calculateNormal(vf%interface_polygon(1,i-1,j,k))+&
+                     &                abs(calculateVolume(vf%interface_polygon(1,i  ,j,k)))*calculateNormal(vf%interface_polygon(1,i  ,j,k)))
+                     ! Compute cos(CA)
+                     mycos=dot_product(mynorm,nw)
+                     ! Project normal in wall-tangent direction
+                     mynorm=normalize(mynorm-mycos*nw)
+                     ! Apply slip velocity model
+                     fs%U(i,j-1,k)=coeff*fs%sigma/fs%visc_l*(mycos-cos_contact_angle)*(vf%VF(i,j,k)-vf%VF(i-1,j,k))
                   end if
                end if
                
@@ -697,12 +685,15 @@ contains
                   ! Handle W-slip
                   mysurf=abs(calculateVolume(vf%interface_polygon(1,i,j,k-1)))+abs(calculateVolume(vf%interface_polygon(1,i,j,k)))
                   if (mysurf.gt.0.0_WP.and.fs%wmask(i,j,k).eq.0) then
-                     ! Surface-averaged local cos(CA)
-                     mycos=(abs(calculateVolume(vf%interface_polygon(1,i,j,k-1)))*dot_product(calculateNormal(vf%interface_polygon(1,i,j,k-1)),nw)+&
-                     &      abs(calculateVolume(vf%interface_polygon(1,i,j,k  )))*dot_product(calculateNormal(vf%interface_polygon(1,i,j,k  )),nw))/mysurf
-                     ! Apply slip velocity
-                     beta=beta_cst*fs%cfg%dz(k)
-                     fs%W(i,j-1,k)=beta*fs%sigma*(mycos-cos_contact_angle)*sum(fs%divw_z(:,i,j,k)*vf%VF(i,j,k-1:k))
+                     ! Surface-averaged local normal
+                     mynorm=normalize(abs(calculateVolume(vf%interface_polygon(1,i,j,k-1)))*calculateNormal(vf%interface_polygon(1,i,j,k-1))+&
+                     &                abs(calculateVolume(vf%interface_polygon(1,i,j,k  )))*calculateNormal(vf%interface_polygon(1,i,j,k  )))
+                     ! Compute cos(CA)
+                     mycos=dot_product(mynorm,nw)
+                     ! Project normal in wall-tangent direction
+                     mynorm=normalize(mynorm-mycos*nw)
+                     ! Apply slip velocity model
+                     fs%W(i,j-1,k)=coeff*fs%sigma/fs%visc_l*(mycos-cos_contact_angle)*(vf%VF(i,j,k)-vf%VF(i,j,k-1))
                   end if
                end if
                

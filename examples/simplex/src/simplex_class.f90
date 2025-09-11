@@ -502,49 +502,63 @@ contains
          do k=this%cfg%kmino_,this%cfg%kmaxo_
             do j=this%cfg%jmino_,this%cfg%jmaxo_
                do i=this%cfg%imino_,this%cfg%imaxo_
-                  ! Calculate distance from object obtained by revolution of polygon
+                  ! Calculate distance from object obtained by revolution of polygon for the plenum
                   this%cfg%Gib(i,j,k)=-this%poly%get_distance([this%cfg%xm(i),sqrt(this%cfg%ym(j)**2+this%cfg%zm(k)**2)])
+                  ! Add inlet pipes
+                  if (this%cfg%xm(i).lt.this%p1(1)) then
+                     this%cfg%Gib(i,j,k)=min(this%cfg%Gib(i,j,k),-levelset_inlet_pipe_1([this%cfg%xm(i),this%cfg%ym(j),this%cfg%zm(k)],0.0_WP))
+                     this%cfg%Gib(i,j,k)=min(this%cfg%Gib(i,j,k),-levelset_inlet_pipe_2([this%cfg%xm(i),this%cfg%ym(j),this%cfg%zm(k)],0.0_WP))
+                  end if
                end do
             end do
          end do
+         ! Apply Neumann on distance at inlet
+         if (this%cfg%iproc.eq.1) then
+            ! Copy into overlap layer
+            do i=this%cfg%imino,this%cfg%imin-1
+               this%cfg%Gib(i,:,:)=this%cfg%Gib(this%cfg%imin,:,:)
+            end do
+         end if
          ! Get normal vector
          call this%cfg%calculate_normal()
          ! Get VF field
          call this%cfg%calculate_vf(method=sharp,allow_zero_vf=.false.)
          ! Carve out inlet pipes
-         create_inlet_pipes: block
-            use mms_geom, only: cube_refine_vol
-            integer :: si,sj,sk,n
-            real(WP), dimension(3,8) :: cube_vertex
-            real(WP), dimension(3) :: v_cent,a_cent
-            real(WP) :: vol,area,contact
-            integer, parameter :: amr_ref_lvl=4
-            do k=this%cfg%kmino_,this%cfg%kmaxo_
-               do j=this%cfg%jmino_,this%cfg%jmaxo_
-                  do i=this%cfg%imino_,this%cfg%imaxo_
-                     ! Only work to the left of the plenum
-                     if (this%cfg%xm(i)-this%p1(1).gt.this%cfg%min_meshsize) cycle
-                     ! Set cube vertices
-                     n=0
-                     do sk=0,1
-                        do sj=0,1
-                           do si=0,1
-                              n=n+1; cube_vertex(:,n)=[this%cfg%x(i+si),this%cfg%y(j+sj),this%cfg%z(k+sk)]
-                           end do
-                        end do
-                     end do
-                     ! Call adaptive refinement code to get volume fraction recursively - inlet pipe 1
-                     vol=0.0_WP; area=0.0_WP; v_cent=0.0_WP; a_cent=0.0_WP
-                     call cube_refine_vol(cube_vertex,vol,area,v_cent,a_cent,levelset_inlet_pipe_1,0.0_WP,amr_ref_lvl)
-                     this%cfg%VF(i,j,k)=max(this%cfg%VF(i,j,k),vol/(this%cfg%dx(i)*this%cfg%dy(j)*this%cfg%dz(k)))
-                     ! Call adaptive refinement code to get volume fraction recursively - inlet pipe 2
-                     vol=0.0_WP; area=0.0_WP; v_cent=0.0_WP; a_cent=0.0_WP
-                     call cube_refine_vol(cube_vertex,vol,area,v_cent,a_cent,levelset_inlet_pipe_2,0.0_WP,amr_ref_lvl)
-                     this%cfg%VF(i,j,k)=max(this%cfg%VF(i,j,k),vol/(this%cfg%dx(i)*this%cfg%dy(j)*this%cfg%dz(k)))
-                  end do
-               end do
-            end do
-         end block create_inlet_pipes
+         !create_inlet_pipes: block
+         !   use mms_geom, only: cube_refine_vol
+         !   integer :: si,sj,sk,n
+         !   real(WP), dimension(3,8) :: cube_vertex
+         !   real(WP), dimension(3) :: v_cent,a_cent
+         !   real(WP) :: vol,area,contact
+         !   integer, parameter :: amr_ref_lvl=4
+         !   do k=this%cfg%kmino_,this%cfg%kmaxo_
+         !      do j=this%cfg%jmino_,this%cfg%jmaxo_
+         !         do i=this%cfg%imino_,this%cfg%imaxo_
+         !            ! Only work to the left of the plenum
+         !            if (this%cfg%xm(i)-this%p1(1).gt.this%cfg%min_meshsize) cycle
+         !            ! Set cube vertices
+         !            n=0
+         !            do sk=0,1
+         !               do sj=0,1
+         !                  do si=0,1
+         !                     n=n+1; cube_vertex(:,n)=[this%cfg%x(i+si),this%cfg%y(j+sj),this%cfg%z(k+sk)]
+         !                  end do
+         !               end do
+         !            end do
+         !            ! Call adaptive refinement code to get volume fraction recursively - inlet pipe 1
+         !            vol=0.0_WP; area=0.0_WP; v_cent=0.0_WP; a_cent=0.0_WP
+         !            call cube_refine_vol(cube_vertex,vol,area,v_cent,a_cent,levelset_inlet_pipe_1,0.0_WP,amr_ref_lvl)
+         !            this%cfg%VF(i,j,k)=max(this%cfg%VF(i,j,k), vol/this%cfg%vol(i,j,k))
+         !            this%cfg%SD(i,j,k)=max(this%cfg%SD(i,j,k),area/this%cfg%vol(i,j,k))
+         !            ! Call adaptive refinement code to get volume fraction recursively - inlet pipe 2
+         !            vol=0.0_WP; area=0.0_WP; v_cent=0.0_WP; a_cent=0.0_WP
+         !            call cube_refine_vol(cube_vertex,vol,area,v_cent,a_cent,levelset_inlet_pipe_2,0.0_WP,amr_ref_lvl)
+         !            this%cfg%VF(i,j,k)=max(this%cfg%VF(i,j,k), vol/this%cfg%vol(i,j,k))
+         !            this%cfg%SD(i,j,k)=max(this%cfg%SD(i,j,k),area/this%cfg%vol(i,j,k))
+         !         end do
+         !      end do
+         !   end do
+         !end block create_inlet_pipes
          ! Apply Neumann on VF and apply stair-stepping at entrance
          if (this%cfg%iproc.eq.1) then
             ! Stair-step entrance
@@ -685,9 +699,8 @@ contains
          call this%input%read('Surface tension coefficient',this%fs%sigma)
          ! Set acceleration of gravity
          call this%input%read('Gravity',this%fs%gravity)
-         ! Inlets on the left
-         call this%fs%add_bcond(name='inlets',type=dirichlet,face='x',dir=-1,canCorrect=.false.,locator=pipe_inlets)
-         call this%fs%add_bcond(name='coflow',type=dirichlet,face='x',dir=-1,canCorrect=.false.,locator=coflow_inlet)
+         ! Inlets and coflow on the left
+         call this%fs%add_bcond(name='inlets',type=dirichlet,face='x',dir=-1,canCorrect=.false.,locator=left_boundary)
          ! Outflow on the right
          call this%fs%add_bcond(name='outflow',type=clipped_neumann,face='x',dir=+1,canCorrect=.false.,locator=right_boundary)
          ! Slip on the sides
@@ -712,19 +725,19 @@ contains
          use tpns_class, only: bcond
          type(bcond), pointer :: mybc
          integer :: i,j,k,n
+         real(WP) :: rad
          ! Zero velocity except if restarting
          this%fs%U=0.0_WP; this%fs%V=0.0_WP; this%fs%W=0.0_WP
-         ! Apply Dirichlet condition at pipe inlets
+         ! Apply Dirichlet condition at inlets
          call this%fs%get_bcond('inlets',mybc)
          do n=1,mybc%itr%no_
             i=mybc%itr%map(1,n); j=mybc%itr%map(2,n); k=mybc%itr%map(3,n)
-            this%fs%U(i,j,k)=this%cfg%VF(i,j,k)*this%mfr/(this%fs%rho_l*this%Apipe)
-         end do
-         ! Apply Dirichlet condition at coflow inlet
-         call this%fs%get_bcond('coflow',mybc)
-         do n=1,mybc%itr%no_
-            i=mybc%itr%map(1,n); j=mybc%itr%map(2,n); k=mybc%itr%map(3,n)
-            this%fs%U(i,j,k)=this%Ucoflow
+            rad=sqrt(this%fs%cfg%ym(j)**2+this%fs%cfg%zm(k)**2)
+            if (rad.lt.this%Rinlet) then
+               this%fs%U(i,j,k)=this%cfg%VF(i,j,k)*this%mfr/(this%fs%rho_l*this%Apipe)
+            else if (rad.gt.this%Rcoflow) then
+               this%fs%U(i,j,k)=this%Ucoflow
+            end if
          end do
          ! Apply all other boundary conditions
          call this%fs%apply_bcond(this%time%t,this%time%dt)
@@ -861,12 +874,12 @@ contains
             call this%fs%get_bcond('inlets',mybc)
             do n=1,mybc%itr%no_
                i=mybc%itr%map(1,n); j=mybc%itr%map(2,n); k=mybc%itr%map(3,n)
-               this%fs%U(i,j,k)=this%cfg%VF(i,j,k)*this%mfr/(this%fs%rho_l*this%Apipe)
-            end do
-            call this%fs%get_bcond('coflow',mybc)
-            do n=1,mybc%itr%no_
-               i=mybc%itr%map(1,n); j=mybc%itr%map(2,n); k=mybc%itr%map(3,n)
-               this%fs%U(i,j,k)=this%Ucoflow
+               rad=sqrt(this%fs%cfg%ym(j)**2+this%fs%cfg%zm(k)**2)
+               if (rad.lt.this%Rinlet) then
+                  this%fs%U(i,j,k)=this%cfg%VF(i,j,k)*this%mfr/(this%fs%rho_l*this%Apipe)
+               else if (rad.gt.this%Rcoflow) then
+                  this%fs%U(i,j,k)=this%Ucoflow
+               end if
             end do
             ! Apply all other boundary conditions
             call this%fs%apply_bcond(this%time%t,this%time%dt)
@@ -915,8 +928,8 @@ contains
          ! Calculate thickness even for plic
          if (.not.this%vf%two_planes) then
             allocate(this%vf%thickness(this%vf%cfg%imino_:this%vf%cfg%imaxo_,this%vf%cfg%jmino_:this%vf%cfg%jmaxo_,this%vf%cfg%kmino_:this%vf%cfg%kmaxo_)); this%vf%thickness=0.0_WP
-            call this%vf%get_thickness()
          end if
+         call this%vf%get_thickness()
          ! Populate surface variables
          np=0
          do k=this%vf%cfg%kmin_,this%vf%cfg%kmax_
@@ -1073,26 +1086,15 @@ contains
       end function right_boundary
       
       
-      !> Function that localizes the pipe inlets
-      function pipe_inlets(pg,i,j,k) result(isIn)
+      !> Function that localizes the left boundary
+      function left_boundary(pg,i,j,k) result(isIn)
          use pgrid_class, only: pgrid
          class(pgrid), intent(in) :: pg
          integer, intent(in) :: i,j,k
          logical :: isIn
          isIn=.false.
-         if (i.eq.pg%imin.and.sqrt(pg%ym(j)**2+pg%zm(k)**2).lt.this%Rinlet) isIn=.true.
-      end function pipe_inlets
-      
-      
-      !> Function that localizes the coflow inlet
-      function coflow_inlet(pg,i,j,k) result(isIn)
-         use pgrid_class, only: pgrid
-         class(pgrid), intent(in) :: pg
-         integer, intent(in) :: i,j,k
-         logical :: isIn
-         isIn=.false.
-         if (i.eq.pg%imin.and.sqrt(pg%ym(j)**2+pg%zm(k)**2).gt.this%Rcoflow) isIn=.true.
-      end function coflow_inlet
+         if (i.eq.pg%imin) isIn=.true.
+      end function left_boundary
       
       
       !> Function that localizes region of VOF removal
@@ -1238,8 +1240,7 @@ contains
       sgs_modeling: block
          use sgsmodel_class, only: vreman,dynamic_smag
          use ibconfig_class, only: VFlo,VFhi
-         real(WP), parameter :: Cslip=0.2_WP ! Whitmore, Bose, and Moin
-         real(WP) :: vf,vol,delta,dudn
+         real(WP), parameter :: Cwm=1.0_WP ! Whitmore, Bose, and Moin, as well as Hausmann and van Wachem
          integer :: i,j,k
          ! Get velocity gradient tensor and strain rate tensor
          call this%fs%get_gradu(this%gradU)
@@ -1256,45 +1257,16 @@ contains
          call this%sgs%get_visc(type=vreman,dt=this%time%dtold,rho=this%resU,gradu=this%gradU)
          ! Add sgs visc to our two-phase viscosities
          do k=this%fs%cfg%kmino_+1,this%fs%cfg%kmaxo_; do j=this%fs%cfg%jmino_+1,this%fs%cfg%jmaxo_; do i=this%fs%cfg%imino_+1,this%fs%cfg%imaxo_
-            this%sgs%visc(i,j,k)=this%sgs%visc(i,j,k)*this%fs%cfg%VF(i,j,k) ! Rescale eddy viscosity by VF
             this%fs%visc(i,j,k)   =this%fs%visc(i,j,k)   +this%sgs%visc(i,j,k)
             this%fs%visc_xy(i,j,k)=this%fs%visc_xy(i,j,k)+sum(this%fs%itp_xy(:,:,i,j,k)*this%sgs%visc(i-1:i,j-1:j,k))
             this%fs%visc_yz(i,j,k)=this%fs%visc_yz(i,j,k)+sum(this%fs%itp_yz(:,:,i,j,k)*this%sgs%visc(i,j-1:j,k-1:k))
             this%fs%visc_zx(i,j,k)=this%fs%visc_zx(i,j,k)+sum(this%fs%itp_xz(:,:,i,j,k)*this%sgs%visc(i-1:i,j,k-1:k))
          end do; end do; end do
-         ! Compute slip velocity using Cslip*delta*(VF)**(1/3)*du/dn
-         this%Uib=0.0_WP; this%Vib=0.0_WP; this%Wib=0.0_WP
-         do k=this%fs%cfg%kmin_,this%fs%cfg%kmax_; do j=this%fs%cfg%jmin_,this%fs%cfg%jmax_; do i=this%fs%cfg%imin_,this%fs%cfg%imax_
-            ! Slip in x
-            vf=sum(this%fs%itpr_x(:,i,j,k)*this%cfg%VF(i-1:i,j,k))
-            if (vf.ge.VFlo.and.vf.le.VFhi) then
-               vol=(this%fs%cfg%VF(i  ,j,k)*this%fs%cfg%vol(i  ,j,k)+&
-               &    this%fs%cfg%VF(i-1,j,k)*this%fs%cfg%vol(i-1,j,k))
-               dudn=-(this%fs%cfg%VF(i  ,j,k)*this%fs%cfg%vol(i  ,j,k)*sum(this%gradU(:,1,i  ,j,k)*this%cfg%Nib(:,i  ,j,k))+&
-               &      this%fs%cfg%VF(i-1,j,k)*this%fs%cfg%vol(i-1,j,k)*sum(this%gradU(:,1,i-1,j,k)*this%cfg%Nib(:,i-1,j,k)))/vol
-               delta=(0.5_WP*vol)**(1.0_WP/3.0_WP)
-               this%Uib(i,j,k)=Cslip*delta*dudn
-            end if
-            ! Slip in y
-            vf=sum(this%fs%itpr_y(:,i,j,k)*this%cfg%VF(i,j-1:j,k))
-            if (vf.ge.VFlo.and.vf.le.VFhi) then
-               vol=(this%fs%cfg%VF(i,j  ,k)*this%fs%cfg%vol(i,j  ,k)+&
-               &    this%fs%cfg%VF(i,j-1,k)*this%fs%cfg%vol(i,j-1,k))
-               dudn=-(this%fs%cfg%VF(i,j  ,k)*this%fs%cfg%vol(i,j  ,k)*sum(this%gradU(:,2,i,j  ,k)*this%cfg%Nib(:,i,j  ,k))+&
-               &      this%fs%cfg%VF(i,j-1,k)*this%fs%cfg%vol(i,j-1,k)*sum(this%gradU(:,2,i,j-1,k)*this%cfg%Nib(:,i,j-1,k)))/vol
-               delta=(0.5_WP*vol)**(1.0_WP/3.0_WP)
-               this%Vib(i,j,k)=Cslip*delta*dudn
-            end if
-            ! Slip in z
-            vf=sum(this%fs%itpr_z(:,i,j,k)*this%cfg%VF(i,j,k-1:k))
-            if (vf.ge.VFlo.and.vf.le.VFhi) then
-               vol=(this%fs%cfg%VF(i,j,k  )*this%fs%cfg%vol(i,j,k  )+&
-               &    this%fs%cfg%VF(i,j,k-1)*this%fs%cfg%vol(i,j,k-1))
-               dudn=-(this%fs%cfg%VF(i,j,k  )*this%fs%cfg%vol(i,j,k  )*sum(this%gradU(:,3,i,j,k  )*this%cfg%Nib(:,i,j,k  ))+&
-               &      this%fs%cfg%VF(i,j,k-1)*this%fs%cfg%vol(i,j,k-1)*sum(this%gradU(:,3,i,j,k-1)*this%cfg%Nib(:,i,j,k-1)))/vol
-               delta=(0.5_WP*vol)**(1.0_WP/3.0_WP)
-               this%Wib(i,j,k)=Cslip*delta*dudn
-            end if
+         ! Compute slip velocity using Cwm*delta*du/dn
+         do k=this%fs%cfg%kmino_,this%fs%cfg%kmaxo_; do j=this%fs%cfg%jmino_,this%fs%cfg%jmaxo_; do i=this%fs%cfg%imino_,this%fs%cfg%imaxo_
+            this%Uib(i,j,k)=-Cwm*this%fs%cfg%meshsize(i,j,k)*sum(this%gradU(:,1,i,j,k)*this%cfg%Nib(:,i,j,k))
+            this%Vib(i,j,k)=-Cwm*this%fs%cfg%meshsize(i,j,k)*sum(this%gradU(:,2,i,j,k)*this%cfg%Nib(:,i,j,k))
+            this%Wib(i,j,k)=-Cwm*this%fs%cfg%meshsize(i,j,k)*sum(this%gradU(:,3,i,j,k)*this%cfg%Nib(:,i,j,k))
          end do; end do; end do
       end block sgs_modeling
       call this%tsgs%stop() ! Stop SGS timer
@@ -1334,24 +1306,36 @@ contains
          
          ! Apply IB forcing to enforce wall boundary conditions
          ibforcing: block
-            use ibconfig_class, only: VFhi,VFlo
+            use ibconfig_class, only: VFlo
             integer :: i,j,k
             real(WP) :: vf
             do k=this%fs%cfg%kmin_,this%fs%cfg%kmax_; do j=this%fs%cfg%jmin_,this%fs%cfg%jmax_; do i=this%fs%cfg%imin_,this%fs%cfg%imax_
                ! U cell
                if (this%fs%umask(i,j,k).eq.0) then
                   vf=sum(this%fs%itpr_x(:,i,j,k)*this%cfg%VF(i-1:i,j,k))
-                  this%fs%U(i,j,k)=vf*this%fs%U(i,j,k)+(1.0_WP-vf)*this%Uib(i,j,k)
+                  if (vf.gt.VFlo) then
+                     this%fs%U(i,j,k)=vf*this%fs%U(i,j,k)+(1.0_WP-vf)*sum(this%fs%itpr_x(:,i,j,k)*this%Uib(i-1:i,j,k))
+                  else
+                     this%fs%U(i,j,k)=0.0_WP
+                  end if
                end if
                ! V cell
                if (this%fs%vmask(i,j,k).eq.0) then
                   vf=sum(this%fs%itpr_y(:,i,j,k)*this%cfg%VF(i,j-1:j,k))
-                  this%fs%V(i,j,k)=vf*this%fs%V(i,j,k)+(1.0_WP-vf)*this%Vib(i,j,k)
+                  if (vf.gt.VFlo) then
+                     this%fs%V(i,j,k)=vf*this%fs%V(i,j,k)+(1.0_WP-vf)*sum(this%fs%itpr_y(:,i,j,k)*this%Vib(i,j-1:j,k))
+                  else
+                    this%fs%V(i,j,k)=0.0_WP
+                  end if
                end if
                ! W cell
                if (this%fs%wmask(i,j,k).eq.0) then
                   vf=sum(this%fs%itpr_z(:,i,j,k)*this%cfg%VF(i,j,k-1:k))
-                  this%fs%W(i,j,k)=vf*this%fs%W(i,j,k)+(1.0_WP-vf)*this%Wib(i,j,k)
+                  if (vf.gt.VFlo) then
+                     this%fs%W(i,j,k)=vf*this%fs%W(i,j,k)+(1.0_WP-vf)*sum(this%fs%itpr_z(:,i,j,k)*this%Wib(i,j,k-1:k))
+                  else
+                     this%fs%W(i,j,k)=0.0_WP
+                  end if
                end if
             end do; end do; end do
             call this%fs%cfg%sync(this%fs%U)

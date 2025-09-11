@@ -25,6 +25,7 @@ module hypre_str_class
    integer, parameter, public ::       gmres=8
    integer, parameter, public ::   pcg_pfmg2=9
    integer, parameter, public :: gmres_pfmg2=10
+   integer, parameter, public ::      DDADIk=20
    
    
    ! List of key solver parameters
@@ -38,6 +39,9 @@ module hypre_str_class
       ! For multigrid solvers, maxlevel parameter is needed
       integer :: maxlevel                                !< Maximum number of multigrid levels
       
+      ! For DDADI(k), number of subiterations
+      integer :: ddadi_it=1                              !< Number of iterations for DDADI(k) (one by default)
+
       ! Private stuff for hypre
       integer(kind=8), private :: hypre_box              !< Grid
       integer(kind=8), private :: hypre_stc              !< Stencil
@@ -56,7 +60,7 @@ module hypre_str_class
       procedure :: setup=>hypre_str_setup                !< Solver setup (every time the operator changes)
       procedure :: solve=>hypre_str_solve                !< Execute solver (assumes new RHS and initial guess at every call)
       procedure :: destroy=>hypre_str_destroy            !< Preconditioner destruction (every time the operator changes)
-      procedure :: final=>hypre_str_final                !< Solver destruction - at the very end
+      procedure :: finalize=>hypre_str_finalize          !< Solver finalization
    end type hypre_str
    
    
@@ -168,6 +172,9 @@ contains
          call HYPRE_StructGMRESSetMaxIter(this%hypre_solver,this%maxit,ierr)
          call HYPRE_StructGMRESSetTol    (this%hypre_solver,this%rcvg,ierr)
          !call HYPRE_StructGMRESSetLogging(this%hypre_solver,1,ierr)
+      case (DDADIk)
+         ! Create DDADI(k) solver
+         call HYPRE_StructCycRedCreate(this%cfg%comm,this%hypre_solver,ierr)
       case default
          ! Unknown solver
          call die('[hypre_str_init] Unknown solution method')
@@ -367,6 +374,39 @@ contains
          call HYPRE_StructGMRESSolve         (this%hypre_solver,this%hypre_mat,this%hypre_rhs,this%hypre_sol,ierr)
          call HYPRE_StructGMRESGetNumIteratio(this%hypre_solver,this%it  ,ierr)
          call HYPRE_StructGMRESGetFinalRelati(this%hypre_solver,this%rerr,ierr)
+      case (DDADIk)
+         ddadi_local: block
+            real(WP) :: tmp
+            call HYPRE_StructCycRedSetTDim(this%hypre_solver,0,ierr) ! Solve in x
+            call HYPRE_StructCycRedSetup  (this%hypre_solver,this%hypre_mat,this%hypre_rhs,this%hypre_sol,ierr)
+            call HYPRE_StructCycRedSolve  (this%hypre_solver,this%hypre_mat,this%hypre_rhs,this%hypre_sol,ierr)
+            do k=this%cfg%kmin_,this%cfg%kmax_
+               do j=this%cfg%jmin_,this%cfg%jmax_
+                  do i=this%cfg%imin_,this%cfg%imax_
+                     call HYPRE_StructVectorGetValues(this%hypre_sol,[i,j,k],tmp,ierr)
+                     call HYPRE_StructVectorSetValues(this%hypre_rhs,[i,j,k],tmp*this%opr(this%stmap(0,0,0),i,j,k),ierr)
+                  end do
+               end do
+            end do
+            call HYPRE_StructCycRedSetTDim(this%hypre_solver,1,ierr) ! Solve in y
+            call HYPRE_StructCycRedSetup  (this%hypre_solver,this%hypre_mat,this%hypre_rhs,this%hypre_sol,ierr)
+            call HYPRE_StructCycRedSolve  (this%hypre_solver,this%hypre_mat,this%hypre_rhs,this%hypre_sol,ierr)
+            do k=this%cfg%kmin_,this%cfg%kmax_
+               do j=this%cfg%jmin_,this%cfg%jmax_
+                  do i=this%cfg%imin_,this%cfg%imax_
+                     call HYPRE_StructVectorGetValues(this%hypre_sol,[i,j,k],tmp,ierr)
+                     call HYPRE_StructVectorSetValues(this%hypre_rhs,[i,j,k],tmp*this%opr(this%stmap(0,0,0),i,j,k),ierr)
+                  end do
+               end do
+            end do
+            call HYPRE_StructCycRedSetTDim(this%hypre_solver,2,ierr) ! Solve in z
+            call HYPRE_StructCycRedSetup  (this%hypre_solver,this%hypre_mat,this%hypre_rhs,this%hypre_sol,ierr)
+            call HYPRE_StructCycRedSolve  (this%hypre_solver,this%hypre_mat,this%hypre_rhs,this%hypre_sol,ierr)
+            ! The iterative part still needs to be added down here
+            ! do it=2,this%ddadi_it
+            !    Solve again with incremental corrections
+            ! end do
+         end block ddadi_local
       end select
       
       ! Retrieve solution from structured vector
@@ -406,7 +446,7 @@ contains
    
    
    !> Finalize solver
-   subroutine hypre_str_final(this)
+   subroutine hypre_str_finalize(this)
       implicit none
       class(hypre_str), intent(inout) :: this
       integer :: ierr
@@ -426,10 +466,18 @@ contains
          call HYPRE_StructPCGDestroy(this%hypre_solver,ierr)
       case (gmres,gmres_smg,gmres_pfmg,gmres_pfmg2)
          call HYPRE_StructGMRESDestroy(this%hypre_solver,ierr)
+      case (DDADIk)
+         call HYPRE_StructCycRedDestroy(this%hypre_solver,ierr)
       end select
       ! Deallocate remaining lin_sol arrays
-      deallocate(this%stc,this%stmap,this%opr,this%rhs,this%sol)
-   end subroutine hypre_str_final
+      if (allocated(this%stc   )) deallocate(this%stc)
+      if (allocated(this%stmap )) deallocate(this%stmap)
+      if (allocated(this%opr   )) deallocate(this%opr)
+      if (allocated(this%rhs   )) deallocate(this%rhs)
+      if (allocated(this%sol   )) deallocate(this%sol)
+      ! Nullify pointer to config if present
+      if (associated(this%cfg)) nullify(this%cfg)
+   end subroutine hypre_str_finalize
    
    
    !> Log hypre_str info

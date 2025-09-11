@@ -31,6 +31,7 @@ module simulation
    real(WP), dimension(:,:,:), allocatable :: resU,resV,resW
    real(WP), dimension(:,:,:), allocatable :: Ui,Vi,Wi
    real(WP), dimension(:,:,:), allocatable :: Uib,Vib,Wib,srcM
+   real(WP), dimension(:,:,:,:,:), allocatable :: gradU
    
    
 contains
@@ -47,7 +48,7 @@ contains
       if (i.eq.pg%imin) isIn=.true.
    end function left_of_domain
    
-
+   
    !> Function that localizes the right (x+) of the domain
    function right_of_domain(pg,i,j,k) result(isIn)
       use pgrid_class, only: pgrid
@@ -58,8 +59,8 @@ contains
       isIn=.false.
       if (i.eq.pg%imax+1) isIn=.true.
    end function right_of_domain
-
-
+   
+   
    !> Initialization of problem solver
    subroutine simulation_init
       use param, only: param_read
@@ -78,6 +79,7 @@ contains
          allocate(Vib (cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
          allocate(Wib (cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
          allocate(srcM(cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
+         allocate(gradU(1:3,1:3,cfg%imino_:cfg%imaxo_,cfg%jmino_:cfg%jmaxo_,cfg%kmino_:cfg%kmaxo_))
       end block allocate_work_arrays
       
       
@@ -92,7 +94,7 @@ contains
       end block initialize_timetracker
       
       
-      ! Create a two-phase flow solver without bconds
+      ! Create a flow solver with inflow-outflow
       create_flow_solver: block
          use incomp_class, only: dirichlet,clipped_neumann
          real(WP) :: visc
@@ -265,6 +267,20 @@ contains
          fs%Vold=fs%V
          fs%Wold=fs%W
          
+         ! IB slip velocity modeling for high Re flows
+         !sgs_modeling: block
+         !   real(WP), parameter :: Cwm=1.0_WP ! Whitmore, Bose, and Moin, as well as Hausmann and van Wachem
+         !   integer :: i,j,k
+         !   ! Get velocity gradient tensor
+         !   call fs%get_gradu(gradU)
+         !   ! Compute slip velocity using Cslip*delta*du/dn
+         !   do k=fs%cfg%kmino_,fs%cfg%kmaxo_; do j=fs%cfg%jmino_,fs%cfg%jmaxo_; do i=fs%cfg%imino_,fs%cfg%imaxo_
+         !      Uib(i,j,k)=-Cwm*fs%cfg%meshsize(i,j,k)*sum(gradU(:,1,i,j,k)*cfg%Nib(:,i,j,k))
+         !      Vib(i,j,k)=-Cwm*fs%cfg%meshsize(i,j,k)*sum(gradU(:,2,i,j,k)*cfg%Nib(:,i,j,k))
+         !      Wib(i,j,k)=-Cwm*fs%cfg%meshsize(i,j,k)*sum(gradU(:,3,i,j,k)*cfg%Nib(:,i,j,k))
+         !   end do; end do; end do
+         !end block sgs_modeling
+         
          ! Perform sub-iterations
          do while (time%it.le.time%itmax)
             
@@ -292,21 +308,33 @@ contains
             ! Apply direct IB forcing
             ibforcing: block
                integer :: i,j,k
-               real(WP) :: VFx,VFy,VFz
-               do k=fs%cfg%kmin_,fs%cfg%kmax_
-                  do j=fs%cfg%jmin_,fs%cfg%jmax_
-                     do i=fs%cfg%imin_,fs%cfg%imax_
-                        ! Compute staggered VF
-                        VFx=sum(fs%itpr_x(:,i,j,k)*cfg%VF(i-1:i,j,k))
-                        VFy=sum(fs%itpr_y(:,i,j,k)*cfg%VF(i,j-1:j,k))
-                        VFz=sum(fs%itpr_z(:,i,j,k)*cfg%VF(i,j,k-1:k))
-                        ! Enforce IB velocity
-                        fs%U(i,j,k)=VFx*fs%U(i,j,k)+(1.0_WP-VFx)*Uib(i,j,k)
-                        fs%V(i,j,k)=VFy*fs%V(i,j,k)+(1.0_WP-VFy)*Vib(i,j,k)
-                        fs%W(i,j,k)=VFz*fs%W(i,j,k)+(1.0_WP-VFz)*Wib(i,j,k)
-                     end do
-                  end do
-               end do
+               real(WP) :: vf,sd
+               do k=fs%cfg%kmin_,fs%cfg%kmax_; do j=fs%cfg%jmin_,fs%cfg%jmax_; do i=fs%cfg%imin_,fs%cfg%imax_
+                  ! U cell
+                  if (fs%umask(i,j,k).eq.0) then
+                     !sd=min(sum(fs%itpr_x(:,i,j,k)*cfg%SD(i-1:i,j,k)*cfg%meshsize(i-1:i,j,k)),1.0_WP)
+                     !fs%U(i,j,k)=(1.0_WP-sd)*fs%U(i,j,k)+sd*sum(fs%itpr_x(:,i,j,k)*Uib(i-1:i,j,k))
+                     !fs%U(i,j,k)=(1.0_WP-sd)*fs%U(i,j,k)+sd*Uib(i,j,k)
+                     vf=sum(fs%itpr_x(:,i,j,k)*cfg%VF(i-1:i,j,k))
+                     fs%U(i,j,k)=vf*fs%U(i,j,k)+(1.0_WP-vf)*Uib(i,j,k)
+                  end if
+                  ! V cell
+                  if (fs%vmask(i,j,k).eq.0) then
+                     !sd=min(sum(fs%itpr_y(:,i,j,k)*cfg%SD(i,j-1:j,k)*cfg%meshsize(i,j-1:j,k)),1.0_WP)
+                     !s%V(i,j,k)=(1.0_WP-sd)*fs%V(i,j,k)+sd*sum(fs%itpr_y(:,i,j,k)*Vib(i,j-1:j,k))
+                     !fs%V(i,j,k)=(1.0_WP-sd)*fs%V(i,j,k)+sd*Vib(i,j,k)
+                     vf=sum(fs%itpr_y(:,i,j,k)*cfg%VF(i,j-1:j,k))
+                     fs%V(i,j,k)=vf*fs%V(i,j,k)+(1.0_WP-vf)*Vib(i,j,k)
+                  end if
+                  ! W cell
+                  if (fs%wmask(i,j,k).eq.0) then
+                     !sd=min(sum(fs%itpr_z(:,i,j,k)*cfg%SD(i,j,k-1:k)*cfg%meshsize(i,j,k-1:k)),1.0_WP)
+                     !fs%W(i,j,k)=(1.0_WP-sd)*fs%W(i,j,k)+sd*sum(fs%itpr_z(:,i,j,k)*Wib(i,j,k-1:k))
+                     !fs%W(i,j,k)=(1.0_WP-sd)*fs%W(i,j,k)+sd*Wib(i,j,k)
+                     vf=sum(fs%itpr_z(:,i,j,k)*cfg%VF(i,j,k-1:k))
+                     fs%W(i,j,k)=vf*fs%W(i,j,k)+(1.0_WP-vf)*Wib(i,j,k)
+                  end if
+               end do; end do; end do
                call fs%cfg%sync(fs%U)
                call fs%cfg%sync(fs%V)
                call fs%cfg%sync(fs%W)
@@ -365,7 +393,7 @@ contains
       ! timetracker
       
       ! Deallocate work arrays
-      deallocate(resU,resV,resW,Ui,Vi,Wi,Uib,Vib,Wib,srcM)
+      deallocate(resU,resV,resW,Ui,Vi,Wi,Uib,Vib,Wib,srcM,gradU)
       
    end subroutine simulation_final
    
