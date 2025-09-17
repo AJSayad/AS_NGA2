@@ -317,7 +317,7 @@ contains
             CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
             ! kinematic Viscous parameters
             call param_read('Gas Reynolds number',ReG);    viscG=ddrop*u2/ReG 
-            call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG
+            call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG/rho_ratio
             if (visc_ratio.eq.0.0_WP)then    ! if visc_ratio is zero, we are running inviscid 
                viscL=0.0_WP; viscG=0.0_WP
             end if
@@ -326,12 +326,13 @@ contains
             call param_read('Liquid Pinf',PinfL)
             call param_read('Liquid density',rhoL)
             call param_read('Liquid specific heat (constant vol)',CvL)
-            call param_read('Liquid kinematic viscosity',viscL)
+            call param_read('Liquid dynamic viscosity',viscL)
             ! Read in Gas variables
             call param_read('Pre-shock density',rho1)
             call param_read('Pre-shock pressure',p1)
             call param_read('Gas specific heat (constant vol)',CvG)
-            call param_read('Gas kinematic viscosity',viscG)
+            call param_read('Gas dynamic viscosity',viscG)            
+            visc_ratio = viscL/viscG                                       ! viscosity ratio
             ! Use shock relations (shock fixed frame) to calculate post-shock conditions 
             M1 = Ms                                                        ! set M1 equal to shock Mach number for now 
             rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP) ! post shock density  (Anderson 3.53)
@@ -343,12 +344,14 @@ contains
             u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2)                      ! post-shock gas velocity and post shock Mach number
             u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)                          ! set pre-shock gas velocity to zero and update pre-shock Mach number
             ! compute some non-dimensional parameters for log files
-            rho_ratio  = rhoL/rho1                                         ! density ratio
-            visc_ratio = viscL/viscG                                       ! viscosity ratio
-            ReG = u2*ddrop/viscG                                           ! ***Reynolds number based on post-shock conditions***
+            rho_ratio  = rhoL/rho1                                         ! density ratio            
+            ReG = ddrop*u2/viscG                                           ! Reynolds number 
             c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)      ! sound speed ratio
             ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)                             ! liquid Mach number from SG EOS
             tc2 = (ddrop/u2)*sqrt(rhoL/rho2)                               ! characteristic time scale for logging
+            ! solver uses kinematic viscosities, convert dynamic to kinematic
+            viscL = viscL/rhoL 
+            viscG = viscG/rho1 
          end if ! dimensional flag
          ! Output case info
          if (amRoot) then
