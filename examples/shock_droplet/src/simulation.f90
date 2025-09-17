@@ -17,7 +17,7 @@ module simulation
 
    !> shock-Gen simulation
    type(shockgen), pointer :: sg=>null()
-   real(WP) :: ushock          ! used to store the velocity of the shock for shock generator
+   real(WP) :: ushock          ! used to store the velocity of the shock (used for finding tmax in shock generator)
    logical, public :: sgenflag ! true for running shockgenerator
    
    !> Shock-drop simulation - pointer since we will dynamically remesh
@@ -67,13 +67,12 @@ module simulation
    real(WP) :: rho_ratio,c_ratio
    real(WP) :: rhoL,ML
    real(WP) :: ReG,viscG,viscL,visc_ratio
-   real(WP) :: tc2 ! characteristic time scale
+   real(WP) :: tc2             ! characteristic time scale used for logging 
    !> dimensional case
    logical, public :: dim_flag ! true for running a dimensional case
    real(WP) :: ddrop           ! drop diameter
    
 contains
-   
    
    !> Function that returns a smooth Heaviside of thickness delta
    real(WP) function Hshock(x,delta)
@@ -81,7 +80,6 @@ contains
       ! Goes from 0 to 1 as x goes from begative to positive
       Hshock=1.0_WP/(1.0_WP+exp(-x/delta))
    end function Hshock
-   
    
    !> P=EOS(RHO,I) for liquid
    pure real(WP) function get_PL(RHO,I)
@@ -108,7 +106,6 @@ contains
       get_SL=CvL*log((P+PinfL)/RHO**GammaL)
    end function get_SL
    
-   
    !> P=EOS(RHO,I) for gas
    pure real(WP) function get_PG(RHO,I)
       implicit none
@@ -133,7 +130,6 @@ contains
       real(WP), intent(in) :: RHO,P
       get_SG=CvG*log((P+PinfG)/RHO**GammaG)
    end function get_SG
-   
    
    !> Mechanical relaxation model
    subroutine P_relax(VF,Q)
@@ -181,7 +177,6 @@ contains
       VF=VFeq
    end subroutine P_relax
    
-   
    !> Mechanical relaxation model (implicit)
    subroutine P_relax_implicit(VF,Q)
       implicit none
@@ -209,7 +204,6 @@ contains
       Q(4)=Q(4)+Peq*(VFeq-VF)
       VF=VFeq
    end subroutine P_relax_implicit
-   
    
    !> Thermo-mechanical relaxation model
    subroutine PT_relax(VF,Q)
@@ -270,7 +264,6 @@ contains
       VF=VFeq
    end subroutine PT_relax
    
-   
    !> Solver initialization
    subroutine simulation_init
       implicit none
@@ -325,7 +318,7 @@ contains
             ! kinematic Viscous parameters
             call param_read('Gas Reynolds number',ReG);    viscG=ddrop*u2/ReG 
             call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG
-            if (visc_ratio.eq.0.0_WP)then ! if visc_ratio is zero, we are running inviscid 
+            if (visc_ratio.eq.0.0_WP)then    ! if visc_ratio is zero, we are running inviscid 
                viscL=0.0_WP; viscG=0.0_WP
             end if
             tc2 = (ddrop/u2)*sqrt(rhoL/rho2) ! characteristic time scale for logging
@@ -354,7 +347,7 @@ contains
             visc_ratio = viscL/viscG                                       ! viscosity ratio
             ReG = u2*ddrop/viscG                                           ! ***Reynolds number based on post-shock conditions***
             c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)      ! sound speed ratio
-            ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)                             ! liquid Mach number
+            ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)                             ! liquid Mach number from SG EOS
             tc2 = (ddrop/u2)*sqrt(rhoL/rho2)                               ! characteristic time scale for logging
          end if ! dimensional flag
          ! Output case info
@@ -541,7 +534,7 @@ contains
          if (sgenflag.eqv.(.true.))then               
             ! allocate shock profile arrays on all procs
             call param_read('nshock',nshock,default=8) ! set number of points for shock profile (left and right of center total pts = 2*nshock+1)
-            allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),U_profile(2*nshock+2)) ! add an extra +1 for U for staggered grid and cell faces
+            allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),U_profile(2*nshock+2)) ! add an extra point for U for staggered grid
             RHOG_profile = 0.0_WP; PG_profile = 0.0_WP; IG_profile = 0.0_WP; U_profile = 0.0_WP
 
             ! create shockgen group
@@ -563,7 +556,8 @@ contains
                   call sg%step()
                end do
                call sg%finalize(nshock,Xend,RHOG_profile,IG_profile,PG_profile,U_profile) 
-            end if ! amRoot
+            end if
+
             ! broadcast shock profile arrays to all procs
             call MPI_BCAST(RHOG_profile,2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr) 
             call MPI_BCAST(IG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
@@ -571,8 +565,10 @@ contains
             call MPI_BCAST(U_profile,   2*nshock+2,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
             
             ! find and update shock 
-            shock_index = ceiling( abs(Xs - sd%cfg%xm(1))/sd%cfg%dx(1))
-            call update_shockprofile(sd%fs%RHOG(:,:,:),sd%fs%PG(:,:,:),sd%fs%IG(:,:,:),sd%fs%U(:,:,:),RHOG_profile,PG_profile,IG_profile,U_profile,sd%cfg%imino_,sd%cfg%imaxo_,sd%cfg%jmino_,sd%cfg%jmaxo_,sd%cfg%kmino_,sd%cfg%kmaxo_,nshock,shock_index) 
+            shock_index = ceiling(abs(Xs - sd%cfg%xm(1))/sd%cfg%dx(1))
+            call update_shockprofile(sd%fs%RHOG(:,:,:),sd%fs%PG(:,:,:),sd%fs%IG(:,:,:),sd%fs%U(:,:,:), &
+                                    & RHOG_profile,PG_profile,IG_profile,U_profile,sd%cfg%imino_,sd%cfg%imaxo_, &
+                                    & sd%cfg%jmino_,sd%cfg%jmaxo_,sd%cfg%kmino_,sd%cfg%kmaxo_,nshock,shock_index) 
             ! rebuild conserved quantites
             call sd%fs%build_interface()
             ! Initialize conserved variables
@@ -581,7 +577,7 @@ contains
             sd%fs%Q(:,:,:,3)= sd%fs%Q(:,:,:,1)*sd%fs%IL
             sd%fs%Q(:,:,:,4)= sd%fs%Q(:,:,:,2)*sd%fs%IG 
             call sd%fs%get_momentum() 
-            ! Communicate conserved variables (not needed in general, but allows 2D runs without changing loop above...)
+            ! Communicate conserved variables
             do i=1,sd%fs%nQ; call sd%fs%cfg%sync(sd%fs%Q(:,:,:,i)); end do
             ! Rebuild primitive variables
             call sd%fs%get_primitive() 
@@ -657,7 +653,7 @@ contains
          if (sgenflag.eqv.(.true.))then            
             ! allocate shock profile arrays on all procs
             call param_read('nshock',nshock,default=8) ! set number of points for shock profile (left and right of center total pts = 2*nshock+1)
-            allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),U_profile(2*nshock+2)) ! add an extra +1 for U for staggered grid
+            allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),U_profile(2*nshock+2)) ! add an extra point for U for staggered grid
             RHOG_profile = 0.0_WP; PG_profile = 0.0_WP; IG_profile = 0.0_WP; U_profile = 0.0_WP
 
             ! create shockgen group
@@ -678,6 +674,7 @@ contains
                end do
                call sg%finalize(nshock,Xend,RHOG_profile,IG_profile,PG_profile,U_profile) 
             end if
+
             ! broadcast shock profile arrays to all procs
             call MPI_BCAST(RHOG_profile,2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr) 
             call MPI_BCAST(IG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
@@ -686,7 +683,9 @@ contains
 
             ! find and update shock
             shock_index = ceiling(abs(Xs - ff%cfg%xm(1))/ff%cfg%dx(1)) ! --> comes from  Loc = shock_index*dx --> shock_index = Loc/dx
-            call update_shockprofile(ff%fs%Q(:,:,:,q),ff%fs%P(:,:,:),ff%fs%I(:,:,:),ff%fs%U(:,:,:),RHOG_profile,PG_profile,IG_profile,U_profile,ff%cfg%imino_,ff%cfg%imaxo_,ff%cfg%jmino_,ff%cfg%jmaxo_,ff%cfg%kmino_,ff%cfg%kmaxo_,nshock,shock_index) 
+            call update_shockprofile(ff%fs%Q(:,:,:,q),ff%fs%P(:,:,:),ff%fs%I(:,:,:),ff%fs%U(:,:,:), &
+                                    & RHOG_profile,PG_profile,IG_profile,U_profile,ff%cfg%imino_,ff%cfg%imaxo_, & 
+                                    & ff%cfg%jmino_,ff%cfg%jmaxo_,ff%cfg%kmino_,ff%cfg%kmaxo_,nshock,shock_index) 
             !Initialize conserved variables
             ff%fs%Q(:,:,:,2)=ff%fs%Q(:,:,:,1)*ff%fs%I
             call ff%fs%get_momentum()
@@ -782,7 +781,6 @@ contains
       end function levelset_drop
    end subroutine simulation_init
    
-   
    !> Perform an NGA2 simulation
    subroutine simulation_run
       implicit none
@@ -859,7 +857,7 @@ contains
       type(MPI_GROUP), intent(in) :: sgen_group
       integer, dimension(3) :: sgen_partition=(/1,1,1/) ! run in serial
       integer  :: i,j,k
-      ! Allocate and initialize the shock-drop solver
+      ! Allocate and initialize the solver
       allocate(sg); call sg%initialize(dx=dx,meshsize=meshsize,startloc=X0,sgen_group=sgen_group,partition=sgen_partition)
       ! Provide thermodynamic model
       sg%fs%getP=>get_PG; sg%fs%getC=>get_CG; sg%fs%getS=>get_SG; sg%fs%getT=>get_TG
@@ -867,12 +865,11 @@ contains
       sg%cst_visc=viscG
       ! time info
       sg%time%dtmax = time%dtmax; sg%time%dt = time%dtmax; sg%time%cflmax = time%cflmax 
-      sg%ens_evt%tper = ens_evt%tper ! uncomment this line (and ensight lines in shockgen_class to save data files for sgen)
-      sg%time%tmax = (Xend - Xs)/ushock    ! this is how long it will take to reach Xend
+      sg%ens_evt%tper = ens_evt%tper    ! uncomment this line (and ensight lines in shockgen_class to save data files for sgen)
+      sg%time%tmax = (Xend - Xs)/ushock ! this is how long it will take to reach Xend
       do k=sg%cfg%kmino_,sg%cfg%kmaxo_
          do j=sg%cfg%jmino_,sg%cfg%jmaxo_
             do i=sg%cfg%imino_,sg%cfg%imaxo_
-               ! Gas variables
                sg%fs%U(i,j,k)=u2*Hshock(Xs-sg%fs%cfg%x(i),delta=0.5_WP*sg%fs%dx); sg%fs%V(i,j,k)=0.0_WP; sg%fs%W(i,j,k)=0.0_WP ! velocity
                sg%fs%Q(i,j,k,1)=rho1+(rho2-rho1)*Hshock(Xs-sg%fs%cfg%xm(i),delta=0.5_WP*sg%fs%dx)                              ! density
                sg%fs%P   (i,j,k)=p1  +(p2  -p1  )*Hshock(Xs-sg%fs%cfg%xm(i),delta=0.5_WP*sg%fs%dx)                             ! pressure
@@ -883,7 +880,6 @@ contains
       ! Initialize conserved variables
       sg%fs%Q(:,:,:,2)=sg%fs%Q(:,:,:,1)*sg%fs%I
       call sg%fs%get_momentum()
-
       ! Rebuild primitive variables
       call sg%fs%get_primitive()
       ! Interpolate velocity
@@ -900,7 +896,7 @@ contains
       real(WP), dimension(:), intent(in) :: rhog_profile,pg_profile,ig_profile,u_profile
       real(WP), dimension(IMIN:IMAX,JMIN:JMAX,KMIN:KMAX)  , intent(inout) :: rhog,pg,ig,u
       integer :: i
-      ! zero everything out (suggested by Chase) we do this to ensure there are no leftover values from Heaviside function (overkill)
+      ! zero everything out we do this to ensure there are no leftover values from Heaviside function (overkill)
       rhog = 0.0_WP; pg = 0.0_WP; ig = 0.0_WP; u = 0.0_WP
       ! set initial values as a discontinuity
       do i = IMIN,IMAX
@@ -925,7 +921,7 @@ contains
          end if
       end do
       do i = IMIN,IMAX
-         if ((i.ge.shock_index - nshock).and.(i.le. shock_index + nshock+1)) then ! shock-profile
+         if ((i.ge.shock_index - nshock).and.(i.le. shock_index + nshock+1)) then ! shock-profile for velocity (includes added point for cell faces)
             u(i,:,:) = u_profile(i - (shock_index - nshock) + 1)
          end if
       end do
@@ -1077,7 +1073,6 @@ contains
       
    end subroutine remesh
    
-   
    !> Coupling from sd to ff
    subroutine couple_sd2ff()
       implicit none
@@ -1189,7 +1184,6 @@ contains
          end if
       end function sponge_forcing
    end subroutine couple_sd2ff
-   
    
    !> Coupling from ff to sd
    subroutine couple_ff2sd()
