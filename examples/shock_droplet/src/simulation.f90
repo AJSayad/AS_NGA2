@@ -345,7 +345,7 @@ contains
             u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)                          ! set pre-shock gas velocity to zero and update pre-shock Mach number
             ! compute some non-dimensional parameters for log files
             rho_ratio  = rhoL/rho1                                         ! density ratio            
-            ReG = rho2*ddrop*u2/viscG                                      ! Reynolds number 
+            ReG = ddrop*u2/viscG                                           ! Reynolds number 
             c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)      ! sound speed ratio
             ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)                             ! liquid Mach number from SG EOS
             tc2 = (ddrop/u2)*sqrt(rhoL/rho2)                               ! characteristic time scale for logging
