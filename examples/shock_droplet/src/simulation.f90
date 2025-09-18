@@ -316,7 +316,7 @@ contains
             CvL=(p1+PinfL)/(rhoL*(GammaL-1.0_WP))
             CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
             ! kinematic Viscous parameters
-            call param_read('Gas Reynolds number',ReG);    viscG=ddrop*u2/ReG 
+            call param_read('Gas Reynolds number',ReG);    viscG=rho2*ddrop*u2/ReG 
             call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG/rho_ratio
             if (visc_ratio.eq.0.0_WP)then    ! if visc_ratio is zero, we are running inviscid 
                viscL=0.0_WP; viscG=0.0_WP
@@ -345,7 +345,7 @@ contains
             u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)                          ! set pre-shock gas velocity to zero and update pre-shock Mach number
             ! compute some non-dimensional parameters for log files
             rho_ratio  = rhoL/rho1                                         ! density ratio            
-            ReG = ddrop*u2/viscG                                           ! Reynolds number 
+            ReG = rho2*ddrop*u2/viscG                                           ! Reynolds number 
             c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)      ! sound speed ratio
             ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)                             ! liquid Mach number from SG EOS
             tc2 = (ddrop/u2)*sqrt(rhoL/rho2)                               ! characteristic time scale for logging
