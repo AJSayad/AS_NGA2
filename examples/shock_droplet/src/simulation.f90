@@ -259,8 +259,37 @@ contains
       Q(4)=(1.0_WP-VFeq)*(Peq+GammaG*PinfG)/(GammaG-1.0_WP)
       VF=VFeq
    end subroutine PT_relax
-   
-   
+
+   ! AS_visc: there are better ways to set this up, but for now I'm going to pass indices just to get things working
+
+   !> constant dynamic viscosity model ! AS_visc
+   subroutine cst_dyn_visc(muG,viscG,T,IMIN,IMAX,JMIN,JMAX,KMIN,KMAX)
+      implicit none
+      real(WP), dimension(:,:,:), intent(inout) :: muG      ! array to be populated 
+      real(WP), intent(in), optional :: viscG               ! dynamic viscosity value
+      real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature array (not used here, only here for interface compatibility)
+      integer, intent(in), optional :: IMIN,IMAX,JMIN,JMAX,KMIN,KMAX ! indices (not used here, only here for interface compatibility))
+      muG(:,:,:) = viscG
+   end subroutine cst_dyn_visc
+
+   !> sutherland model for viscosity ! AS_visc
+   subroutine sutherland_air(muG,viscG,T,IMIN,IMAX,JMIN,JMAX,KMIN,KMAX)
+      implicit none
+      real(WP), dimension(:,:,:), intent(inout) :: muG      ! array to be populated 
+      real(WP), intent(in), optional :: viscG               ! dynamic viscosity value
+      real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature array (only declared optional for interface compatibility)
+      integer, intent(in), optional :: IMIN,IMAX,JMIN,JMAX,KMIN,KMAX ! indices
+      integer :: i,j,k
+      real(WP), parameter :: mu0=1.716e-5 ! [Pa*s] https://doc.comsol.com/5.5/doc/com.comsol.help.cfd/cfd_ug_fluidflow_high_mach.08.27.html
+      real(WP), parameter :: T0=273       ! [K] reference temperature
+      real(WP), parameter :: S=111        ! [K] sutherland constant for air
+      ! AS_visc: currently only setup for nondimensional case, so we do not multiply by mu0
+      do i=IMIN,IMAX; do j=JMIN,JMAX; do k=KMIN,KMAX
+         muG(i,j,k) = ((T(i,j,k)/T0)**1.5)*((T0+S)/(T(i,j,k)+S))       ! non-dimensional sutherland model verified
+         ! muG(i,j,k) = mu0*((T(i,j,k)/T0)**1.5)*((T0+S)/(T(i,j,k)+S)) ! dimensional sutherland model verified 
+      end do; end do; end do
+   end subroutine sutherland_air
+
    !> Solver initialization
    subroutine simulation_init
       implicit none
@@ -305,7 +334,7 @@ contains
          CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
          ! Viscous parameters
          call param_read('Gas Reynolds number',ReG); viscG=rho1*1.0_WP*u2/ReG 
-         call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG
+         call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG/rho_ratio
          ! Output case info
          if (amRoot) then
             write(message,'("[Liquid EOS] => Gamma=",es12.5)') GammaL; call log(message)
@@ -417,7 +446,30 @@ contains
          sd%fs%getPG=>get_PG; sd%fs%getCG=>get_CG; sd%fs%getSG=>get_SG; sd%fs%getTG=>get_TG
          ! We need to transfer our viscosities explicitly...
          sd%cst_viscL=viscL; sd%cst_viscG=viscG
+         ! AS_visc set viscosity model
+         !sd%visc_model=>cst_dyn_visc
+         sd%visc_model=>sutherland_air
       end block setup_sd
+
+      ! AS_visc
+      TEST_VISCOSITY: block
+         ! AS_visc: this seems to be working right now for constant dynamic --> we eventually need to call this in shockdrop_class.f90
+         real(WP) :: test_visc
+         real(WP), dimension(3,3,3) :: test_mu
+         real(WP), dimension(3,3,3) :: test_T
+         test_visc = 1.0e-3_WP
+         test_mu = 0.0_WP
+         test_T = 300.0_WP
+         ! AS check pointer association
+         if (associated(sd%visc_model)) then
+            print *, "visc_model pointer is associated."
+            ! AS check constant viscosity model
+            call sd%visc_model(muG=test_mu,viscG=test_visc,T=test_T,IMIN=1,IMAX=3,JMIN=1,JMAX=3,KMIN=1,KMAX=3)
+            print *, "test_mu after call:", test_mu
+         else
+            print *, "visc_model pointer is NOT associated."
+         end if
+      end block TEST_VISCOSITY
       
       ! Generate initial conditions for shock-drop problem
       initialize_sd: block
