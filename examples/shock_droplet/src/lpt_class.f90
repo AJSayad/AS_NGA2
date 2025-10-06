@@ -934,18 +934,18 @@ contains
          opt_dt=tau/real(this%nstep,WP)
       end block compute_drag
       
-      ! Compute heat transfer (Gunn, 1978)
-      compute_heat: block
-         use mathtools, only: Pi
-         real(WP) :: Nu,Rep,tau
-         real(WP), parameter :: Pr=0.71_WP
-         tau=this%rho*p%d**2/(18.0_WP*fvisc)
-         Rep=frho*norm2(p%vel-fvel)*p%d/fvisc+epsilon(1.0_WP)
-         Nu=(7.0_WP-10.0_WP*fVF+5.0_WP*fVF**2)*(1.0_WP+0.7_WP*Rep**(0.2_WP)*&
-         &  Pr**(1.0_WP/3.0_WP))+(1.33_WP-2.4_WP*fVF+1.2_WP*fVF**2)*&
-         &  Rep**(0.7_WP)*Pr**(1.0_WP/3.0_WP)
-         dTdt=Nu/(3.0_WP*tau*Pr*this%Cp)*(fT-p%T)+fQ/(this%rho*this%Cp)
-      end block compute_heat
+      ! ! Compute heat transfer (Gunn, 1978)
+      ! compute_heat: block
+      !    use mathtools, only: Pi
+      !    real(WP) :: Nu,Rep,tau
+      !    real(WP), parameter :: Pr=0.71_WP
+      !    tau=this%rho*p%d**2/(18.0_WP*fvisc)
+      !    Rep=frho*norm2(p%vel-fvel)*p%d/fvisc+epsilon(1.0_WP)
+      !    Nu=(7.0_WP-10.0_WP*fVF+5.0_WP*fVF**2)*(1.0_WP+0.7_WP*Rep**(0.2_WP)*&
+      !    &  Pr**(1.0_WP/3.0_WP))+(1.33_WP-2.4_WP*fVF+1.2_WP*fVF**2)*&
+      !    &  Rep**(0.7_WP)*Pr**(1.0_WP/3.0_WP)
+      !    dTdt=Nu/(3.0_WP*tau*Pr*this%Cp)*(fT-p%T)+fQ/(this%rho*this%Cp)
+      ! end block compute_heat
       
    end subroutine get_rhs
    

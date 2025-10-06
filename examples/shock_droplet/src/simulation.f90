@@ -283,6 +283,17 @@ contains
       real(WP), parameter :: mu0=1.716e-5 ! [Pa*s] https://doc.comsol.com/5.5/doc/com.comsol.help.cfd/cfd_ug_fluidflow_high_mach.08.27.html
       real(WP), parameter :: T0=273       ! [K] reference temperature
       real(WP), parameter :: S=111        ! [K] sutherland constant for air
+
+      ! print*, "[sutherland_air]"
+      ! print*, "IMIN: ", IMIN
+      ! print*, "IMAX: ", IMAX
+      ! print*, "JMIN: ", JMIN
+      ! print*, "JMAX: ", JMAX
+      ! print*, "KMIN: ", KMIN
+      ! print*, "KMAX: ", KMAX
+      ! print*, "present(T): ", present(T)
+      ! print*, "present(viscG): ", present(viscG)
+      
       ! AS_visc: currently only setup for nondimensional case, so we do not multiply by mu0
       do i=IMIN,IMAX; do j=JMIN,JMAX; do k=KMIN,KMAX
          muG(i,j,k) = ((T(i,j,k)/T0)**1.5)*((T0+S)/(T(i,j,k)+S))       ! non-dimensional sutherland model verified
@@ -447,29 +458,30 @@ contains
          ! We need to transfer our viscosities explicitly...
          sd%cst_viscL=viscL; sd%cst_viscG=viscG
          ! AS_visc set viscosity model
-         !sd%visc_model=>cst_dyn_visc
-         sd%visc_model=>sutherland_air
+         !sd%visc_modelG=>cst_dyn_visc
+         sd%visc_modelG=>sutherland_air
       end block setup_sd
 
-      ! AS_visc
-      TEST_VISCOSITY: block
-         ! AS_visc: this seems to be working right now for constant dynamic --> we eventually need to call this in shockdrop_class.f90
-         real(WP) :: test_visc
-         real(WP), dimension(3,3,3) :: test_mu
-         real(WP), dimension(3,3,3) :: test_T
-         test_visc = 1.0e-3_WP
-         test_mu = 0.0_WP
-         test_T = 300.0_WP
-         ! AS check pointer association
-         if (associated(sd%visc_model)) then
-            print *, "visc_model pointer is associated."
-            ! AS check constant viscosity model
-            call sd%visc_model(muG=test_mu,viscG=test_visc,T=test_T,IMIN=1,IMAX=3,JMIN=1,JMAX=3,KMIN=1,KMAX=3)
-            print *, "test_mu after call:", test_mu
-         else
-            print *, "visc_model pointer is NOT associated."
-         end if
-      end block TEST_VISCOSITY
+      ! ! AS_visc
+      ! TEST_VISCOSITY: block
+      !    ! AS_visc: this seems to be working right now for constant dynamic --> we eventually need to call this in shockdrop_class.f90
+      !    real(WP) :: test_visc
+      !    real(WP), dimension(3,3,3) :: test_mu
+      !    real(WP), dimension(3,3,3) :: test_T
+      !    test_visc = 1.0e-3_WP
+      !    test_mu = 0.0_WP
+      !    test_T = 300.0_WP
+      !    ! AS check pointer association
+      !    if (associated(sd%visc_modelG)) then
+      !       print *, "visc_modelG pointer is associated."
+      !       ! AS check constant viscosity model
+      !       call sd%visc_modelG(muG=test_mu,viscG=test_visc,T=test_T,IMIN=1,IMAX=3,JMIN=1,JMAX=3,KMIN=1,KMAX=3)
+      !       print *, "test_mu after call:", test_mu
+      !    else
+      !       print *, "visc_modelG pointer is NOT associated."
+      !    end if
+      ! end block TEST_VISCOSITY
+      
       
       ! Generate initial conditions for shock-drop problem
       initialize_sd: block
@@ -765,6 +777,10 @@ contains
          sdnew%cst_viscL=sd%cst_viscL; sdnew%cst_viscG=sd%cst_viscG
          ! Inform sdnew's timetracker of our current time, but leave n unchanged to make remeshing obvious
          sdnew%time%t=time%t
+         ! AS_visc: we need to reset our viscosity model
+         print*, "[sim.f90] just before resetting our visc model pointer"
+         sdnew%visc_modelG=>sd%visc_modelG
+         print*, "[sim.f90] just after resetting our visc model pointer"
       end block setup_sdnew
       
       ! Create new couplers
@@ -773,6 +789,8 @@ contains
          allocate(sdnew2ff); sdnew2ff=coupler(src_grp=group,dst_grp=group,name='sd2ff'); call sdnew2ff%set_src(sdnew%cfg); call sdnew2ff%set_dst(ff%cfg); call sdnew2ff%initialize()
          allocate(ff2sdnew); ff2sdnew=coupler(src_grp=group,dst_grp=group,name='ff2sd'); call ff2sdnew%set_src(ff%cfg); call ff2sdnew%set_dst(sdnew%cfg); call ff2sdnew%initialize()
       end block setup_new_couplers
+
+      print*, "[sim.f90] just after setting up new couplers"
       
       ! Initialize all sdnew to gas including in ghost cells
       initialize_to_gas: block
@@ -784,6 +802,8 @@ contains
             call setNumberOfPlanes(sdnew%fs%PLIC(i,j,k),1); call setPlane(sdnew%fs%PLIC(i,j,k),0,[0.0_WP,0.0_WP,0.0_WP],sign(1.0_WP,sdnew%fs%VF(i,j,k)-0.5_WP))
          end do; end do; end do
       end block initialize_to_gas
+
+      print*, "[sim.f90] just after initializing sdnew to gas"
       
       ! Initialize sdnew using ff
       initialize_sdnew_from_ff: block
@@ -799,6 +819,8 @@ contains
          ! Rebuild primitive variables
          call sdnew%fs%get_primitive()
       end block initialize_sdnew_from_ff
+
+      print*, "[sim.f90] just after initializing sdnew from ff"
       
       ! Initialize sdnew using sd
       initialize_sdnew_from_sd: block
@@ -845,18 +867,30 @@ contains
          ! Compute local Mach number
          sdnew%Ma=sqrt(sdnew%Ui**2+sdnew%Vi**2+sdnew%Wi**2)/sdnew%fs%C
       end block initialize_sdnew_from_sd
+
+      print*, "[sim.f90] just after initializing sdnew from sd"
+
+      ! AS_visc: when we use sutherland_air, the code crashes in the block below free(): invalid pointer
+      ! we crash on this step call sd2ff%finalize(); deallocate(sd2ff); sd2ff=>sdnew2ff
       
       ! Finally, transfer allocation
       transfer_allocation: block
          ! Finalize and free up couplers, point to new ones
          call sd2ff%finalize(); deallocate(sd2ff); sd2ff=>sdnew2ff
+         print*, "[sim.f90] transfer: just after transferring sd2ff"
          call ff2sd%finalize(); deallocate(ff2sd); ff2sd=>ff2sdnew
+         print*, "[sim.f90] transfer: just after transferring ff2sd"
          ! Finalize and free up sd, point to new one
          call sd%finalize(); deallocate(sd); sd=>sdnew
+         print*, "[sim.f90] transfer: just after transferring sd"
       end block transfer_allocation
+
+      print* , "[sim.f90] just after transferring allocation to sdnew"
       
       ! Monitor mesh size
       call sd%meshfile%write()
+
+      print*, "[sim.f90] just after writing meshfile"
       
       ! Some messaging
       if (amRoot) then
@@ -864,6 +898,8 @@ contains
          call log(trim(message))
          write(output_unit,*) trim(message)
       end if
+
+      print*, "[sim.f90] just before exiting remesh"
       
    end subroutine remesh
    

@@ -414,6 +414,25 @@ contains
       implicit none
       class(shockdrop), intent(inout) :: this
       real(WP) :: dt
+
+      ! AS_visc
+      TEST_VISCOSITY: block
+         ! AS_visc: this seems to be working right now for constant dynamic --> we eventually need to call this in shockdrop_class.f90
+         real(WP) :: test_visc         
+         real(WP), dimension(this%cfg%imino_:this%cfg%imaxo_,this%cfg%jmino_:this%cfg%jmaxo_,this%cfg%kmino_:this%cfg%kmaxo_) :: test_T
+         test_visc = 1.0e-3_WP
+         test_T = 300.0_WP
+         ! AS check pointer association
+         if (associated(this%visc_modelG)) then
+            print *, "visc_modelG pointer is associated."
+            ! AS check constant viscosity model
+            !call this%visc_modelG(muG=this%dynviscG,viscG=test_visc,T=test_T,&
+            !IMIN=this%cfg%imino_,IMAX=this%cfg%imaxo_,JMIN=this%cfg%jmino_,JMAX=this%cfg%jmaxo_,KMIN=this%cfg%kmino_,KMAX=this%cfg%kmaxo_)
+            !print *, "test_mu after call:", this%dynviscG(:,1,1)
+         else
+            print *, "visc_modelG pointer is NOT associated."
+         end if
+      end block TEST_VISCOSITY
       
       ! Increment time
       this%time%dt=dt
@@ -546,7 +565,8 @@ contains
       end if
    end subroutine output_ensight
    
-   
+   !> AS_visc: in here we will need to update how we setup our viscosity, we will need to call our provided viscosity model
+
    !> Calculate viscosities
    subroutine prepare_viscosities(this)
       implicit none
