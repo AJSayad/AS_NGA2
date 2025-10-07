@@ -351,12 +351,13 @@ contains
    subroutine prepare_viscosities(this)
       implicit none
       class(ffshock), intent(inout) :: this
+      real(WP), parameter :: Cb2v=0.1_WP
       ! Get LAD
       call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta              )
       ! Get eddy viscosity
       call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
       ! Try adding BETA to visc
-      this%fs%VISC=this%fs%VISC+this%fs%BETA
+      this%fs%VISC=this%fs%VISC+Cb2v*this%fs%BETA
    end subroutine prepare_viscosities
    
    
