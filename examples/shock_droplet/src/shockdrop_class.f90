@@ -574,6 +574,7 @@ contains
       real(WP) :: Lvof,Lrho,Gvof,Grho
       real(WP) :: Lvisc,Gvisc,Lbeta,Gbeta
       real(WP), parameter :: eps=1.0e-15_WP
+      real(WP), parameter :: Cb2v=0.1_WP
       integer :: i,j,k
       ! AS_visc: Get our physical viscosity
       call this%visc_modelG(muG=this%dynviscG,viscG=this%cst_viscG,T=this%fs%TG,&
@@ -595,7 +596,7 @@ contains
          ! Harmonic average of BETA
          Lbeta=Lrho*this%beta(i,j,k); Gbeta=Grho*this%beta(i,j,k); this%fs%BETA(i,j,k)=(Lvof+Gvof)/(Lvof/max(Lbeta,eps)+Gvof/max(Gbeta,eps))
          ! Try adding BETA to visc
-         !this%fs%VISC(i,j,k)=this%fs%VISC(i,j,k)+this%fs%BETA(i,j,k)
+         this%fs%VISC(i,j,k)=this%fs%VISC(i,j,k)+Cb2v*this%fs%BETA(i,j,k)
       end do; end do; end do
    end subroutine prepare_viscosities
    

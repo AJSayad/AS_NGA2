@@ -372,6 +372,7 @@ contains
    subroutine prepare_viscosities(this)
       implicit none
       class(ffshock), intent(inout) :: this
+      real(WP), parameter :: Cb2v=0.1_WP
       ! AS_visc: Get our physical viscosity
       !call this%visc_model(muG=this%dynvisc,viscG=this%cst_visc,T=this%fs%T,&
       !       &IMIN=this%cfg%imino_,IMAX=this%cfg%imaxo_,JMIN=this%cfg%jmino_,JMAX=this%cfg%jmaxo_,KMIN=this%cfg%kmino_,KMAX=this%cfg%kmaxo_) ! how should we pass our viscG?
@@ -380,7 +381,7 @@ contains
       ! Get eddy viscosity
       call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
       ! Try adding BETA to visc
-      this%fs%VISC=this%fs%VISC+this%fs%BETA!+this%dynvisc ! AS_visc: include our physical viscosity
+      this%fs%VISC=this%fs%VISC+Cb2v*this%fs%BETA!+this%dynvisc ! AS_visc: include our physical viscosity
    end subroutine prepare_viscosities
    
    
