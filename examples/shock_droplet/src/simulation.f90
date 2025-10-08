@@ -263,41 +263,32 @@ contains
    ! AS_visc: there are better ways to set this up, but for now I'm going to pass indices just to get things working
 
    !> constant dynamic viscosity model ! AS_visc
-   subroutine cst_dyn_visc(muG,viscG,T,IMIN,IMAX,JMIN,JMAX,KMIN,KMAX)
+   subroutine cst_dyn_visc(mu,visc,T)
       implicit none
-      real(WP), dimension(:,:,:), intent(inout) :: muG      ! array to be populated 
-      real(WP), intent(in), optional :: viscG               ! dynamic viscosity value
+      real(WP), dimension(:,:,:), intent(inout) :: mu      ! array to be populated 
+      real(WP), intent(in), optional :: visc               ! dynamic viscosity value
       real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature array (not used here, only here for interface compatibility)
-      integer, intent(in), optional :: IMIN,IMAX,JMIN,JMAX,KMIN,KMAX ! indices (not used here, only here for interface compatibility))
-      muG(:,:,:) = viscG
+      mu(:,:,:) = visc
    end subroutine cst_dyn_visc
 
    !> sutherland model for viscosity ! AS_visc
-   subroutine sutherland_air(muG,viscG,T,IMIN,IMAX,JMIN,JMAX,KMIN,KMAX)
+   subroutine sutherland_air(mu,visc,T)
       implicit none
-      real(WP), dimension(:,:,:), intent(inout) :: muG      ! array to be populated 
-      real(WP), intent(in), optional :: viscG               ! dynamic viscosity value
+      real(WP), dimension(:,:,:), intent(inout) :: mu       ! array to be populated 
+      real(WP), intent(in), optional :: visc                ! dynamic viscosity value
       real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature array (only declared optional for interface compatibility)
-      integer, intent(in), optional :: IMIN,IMAX,JMIN,JMAX,KMIN,KMAX ! indices
       integer :: i,j,k
-      real(WP), parameter :: mu0=1.716e-5 ! [Pa*s] https://doc.comsol.com/5.5/doc/com.comsol.help.cfd/cfd_ug_fluidflow_high_mach.08.27.html
-      real(WP), parameter :: T0=273       ! [K] reference temperature
-      real(WP), parameter :: S=111        ! [K] sutherland constant for air
+      real(WP), parameter :: mu0=1.716e-5_WP ! [Pa*s] https://www.cfd-online.com/Wiki/Sutherland%27s_law 
+      real(WP) :: T0=273.15_WP     ! [K] reference temperature
+      real(WP) :: S=110.4_WP       ! [K] sutherland constant for air
 
-      ! print*, "[sutherland_air]"
-      ! print*, "IMIN: ", IMIN
-      ! print*, "IMAX: ", IMAX
-      ! print*, "JMIN: ", JMIN
-      ! print*, "JMAX: ", JMAX
-      ! print*, "KMIN: ", KMIN
-      ! print*, "KMAX: ", KMAX
-      ! print*, "present(T): ", present(T)
-      ! print*, "present(viscG): ", present(viscG)
-      
+      if(.not.present(T))then; print*, "[sutherland_air] Temperature not provided "; end if
       ! AS_visc: currently only setup for nondimensional case, so we do not multiply by mu0
-      do i=IMIN,IMAX; do j=JMIN,JMAX; do k=KMIN,KMAX
-         muG(i,j,k) = ((T(i,j,k)/T0)**1.5)*((T0+S)/(T(i,j,k)+S))       ! non-dimensional sutherland model verified
-         ! muG(i,j,k) = mu0*((T(i,j,k)/T0)**1.5)*((T0+S)/(T(i,j,k)+S)) ! dimensional sutherland model verified 
+      do k=lbound(mu,3),ubound(mu,3); do j=lbound(mu,2),ubound(mu,2); do i=lbound(mu,1),ubound(mu,1)
+         ! AS: for nondimensional case, normalize every term by T0 as in 
+         mu(i,j,k) = (1.4042*(T(i,j,k)/T0)**1.5)/((T(i,j,k)/T0)+0.4042) ! https://pubs.aip.org/aip/pof/article/36/5/055146/3294212/Comparison-of-high-order-numerical-methodologies
+         ! mu(i,j,k) = ((T(i,j,k)/T0)**1.5)*((T0+S)/(T(i,j,k)+S))       ! non-dimensional sutherland model verified
+         ! mu(i,j,k) = mu0*((T(i,j,k)/T0)**1.5)*((T0+S)/(T(i,j,k)+S)) ! dimensional sutherland model 
       end do; end do; end do
    end subroutine sutherland_air
 
@@ -457,32 +448,16 @@ contains
          sd%fs%getPG=>get_PG; sd%fs%getCG=>get_CG; sd%fs%getSG=>get_SG; sd%fs%getTG=>get_TG
          ! We need to transfer our viscosities explicitly...
          sd%cst_viscL=viscL; sd%cst_viscG=viscG
-         ! AS_visc set viscosity model
-         !sd%visc_modelG=>cst_dyn_visc
-         sd%visc_modelG=>sutherland_air
+         ! AS_visc set viscosity model for liquid
+         sd%visc_modelL=>cst_dyn_visc
+         ! AS_visc set viscosity model for gas
+         sd%visc_modelG=>cst_dyn_visc
+         !sd%visc_modelG=>sutherland_air
+         ! AS_visc: set initial viscosity
+         call sd%visc_modelL(mu=sd%dynviscL,visc=viscL,T=sd%fs%TL)
+         call sd%visc_modelG(mu=sd%dynviscG,visc=viscG,T=sd%fs%TG)
       end block setup_sd
 
-      ! ! AS_visc
-      ! TEST_VISCOSITY: block
-      !    ! AS_visc: this seems to be working right now for constant dynamic --> we eventually need to call this in shockdrop_class.f90
-      !    real(WP) :: test_visc
-      !    real(WP), dimension(3,3,3) :: test_mu
-      !    real(WP), dimension(3,3,3) :: test_T
-      !    test_visc = 1.0e-3_WP
-      !    test_mu = 0.0_WP
-      !    test_T = 300.0_WP
-      !    ! AS check pointer association
-      !    if (associated(sd%visc_modelG)) then
-      !       print *, "visc_modelG pointer is associated."
-      !       ! AS check constant viscosity model
-      !       call sd%visc_modelG(muG=test_mu,viscG=test_visc,T=test_T,IMIN=1,IMAX=3,JMIN=1,JMAX=3,KMIN=1,KMAX=3)
-      !       print *, "test_mu after call:", test_mu
-      !    else
-      !       print *, "visc_modelG pointer is NOT associated."
-      !    end if
-      ! end block TEST_VISCOSITY
-      
-      
       ! Generate initial conditions for shock-drop problem
       initialize_sd: block
          use irl_fortran_interface, only: setNumberOfPlanes,setPlane
@@ -553,6 +528,11 @@ contains
          ff%fs%getP=>get_PG; ff%fs%getC=>get_CG; ff%fs%getS=>get_SG; ff%fs%getT=>get_TG
          ! We need to transfer our viscosity explicitly...
          ff%cst_visc=viscG
+         ! AS_visc: set viscosity model for our farfield simulation
+         ff%visc_model=>cst_dyn_visc
+         !ff%visc_model=>sutherland_air
+         ! AS_visc: set our initial viscosities
+         call ff%visc_model(mu=ff%dynvisc,visc=viscG,T=ff%fs%T)
       end block setup_ff
       
       ! Generate initial conditions for far-field shock problem
@@ -778,9 +758,8 @@ contains
          ! Inform sdnew's timetracker of our current time, but leave n unchanged to make remeshing obvious
          sdnew%time%t=time%t
          ! AS_visc: we need to reset our viscosity model
-         print*, "[sim.f90] just before resetting our visc model pointer"
+         sdnew%visc_modelL=>sd%visc_modelL
          sdnew%visc_modelG=>sd%visc_modelG
-         print*, "[sim.f90] just after resetting our visc model pointer"
       end block setup_sdnew
       
       ! Create new couplers
@@ -790,8 +769,6 @@ contains
          allocate(ff2sdnew); ff2sdnew=coupler(src_grp=group,dst_grp=group,name='ff2sd'); call ff2sdnew%set_src(ff%cfg); call ff2sdnew%set_dst(sdnew%cfg); call ff2sdnew%initialize()
       end block setup_new_couplers
 
-      print*, "[sim.f90] just after setting up new couplers"
-      
       ! Initialize all sdnew to gas including in ghost cells
       initialize_to_gas: block
          use irl_fortran_interface, only: setNumberOfPlanes,setPlane
@@ -802,8 +779,6 @@ contains
             call setNumberOfPlanes(sdnew%fs%PLIC(i,j,k),1); call setPlane(sdnew%fs%PLIC(i,j,k),0,[0.0_WP,0.0_WP,0.0_WP],sign(1.0_WP,sdnew%fs%VF(i,j,k)-0.5_WP))
          end do; end do; end do
       end block initialize_to_gas
-
-      print*, "[sim.f90] just after initializing sdnew to gas"
       
       ! Initialize sdnew using ff
       initialize_sdnew_from_ff: block
@@ -819,8 +794,6 @@ contains
          ! Rebuild primitive variables
          call sdnew%fs%get_primitive()
       end block initialize_sdnew_from_ff
-
-      print*, "[sim.f90] just after initializing sdnew from ff"
       
       ! Initialize sdnew using sd
       initialize_sdnew_from_sd: block
@@ -868,29 +841,17 @@ contains
          sdnew%Ma=sqrt(sdnew%Ui**2+sdnew%Vi**2+sdnew%Wi**2)/sdnew%fs%C
       end block initialize_sdnew_from_sd
 
-      print*, "[sim.f90] just after initializing sdnew from sd"
-
-      ! AS_visc: when we use sutherland_air, the code crashes in the block below free(): invalid pointer
-      ! we crash on this step call sd2ff%finalize(); deallocate(sd2ff); sd2ff=>sdnew2ff
-      
       ! Finally, transfer allocation
       transfer_allocation: block
          ! Finalize and free up couplers, point to new ones
          call sd2ff%finalize(); deallocate(sd2ff); sd2ff=>sdnew2ff
-         print*, "[sim.f90] transfer: just after transferring sd2ff"
          call ff2sd%finalize(); deallocate(ff2sd); ff2sd=>ff2sdnew
-         print*, "[sim.f90] transfer: just after transferring ff2sd"
          ! Finalize and free up sd, point to new one
          call sd%finalize(); deallocate(sd); sd=>sdnew
-         print*, "[sim.f90] transfer: just after transferring sd"
       end block transfer_allocation
 
-      print* , "[sim.f90] just after transferring allocation to sdnew"
-      
       ! Monitor mesh size
       call sd%meshfile%write()
-
-      print*, "[sim.f90] just after writing meshfile"
       
       ! Some messaging
       if (amRoot) then
@@ -898,8 +859,6 @@ contains
          call log(trim(message))
          write(output_unit,*) trim(message)
       end if
-
-      print*, "[sim.f90] just before exiting remesh"
       
    end subroutine remesh
    

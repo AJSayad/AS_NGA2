@@ -28,6 +28,7 @@ module shockdrop_class
 
       !> viscosity model ! AS_visc
       procedure(visc_type), pointer, nopass :: visc_modelG=>NULL() ! pointer to subroutine for viscosity model 
+      procedure(visc_type), pointer, nopass :: visc_modelL=>NULL() ! pointer to subroutine for viscosity model 
       
       !> CCL for postprocessing
       type(cclabel) :: ccl
@@ -47,7 +48,7 @@ module shockdrop_class
       real(WP) :: cst_viscL,cst_viscG
 
       !> phasic dynamic viscosities
-      real(WP), dimension(:,:,:), allocatable :: dynviscG ! AS_visc: added array for storing Gas dynamic viscosity
+      real(WP), dimension(:,:,:), allocatable :: dynviscG, dynviscL ! AS_visc: added array for storing Gas dynamic viscosity
       
       !> Various post-processing info
       real(WP) :: Vcore,Mcore,Xcore,Ycore,Zcore !< Drop core data
@@ -67,13 +68,12 @@ module shockdrop_class
    end type shockdrop
 
    abstract interface ! AS_visc: interface for viscosity model
-      subroutine visc_type(muG,viscG,T,IMIN,IMAX,JMIN,JMAX,KMIN,KMAX) ! ---> there is a better way to do this
+      subroutine visc_type(mu,visc,T)
          import :: WP
          implicit none
-         real(WP), dimension(:,:,:), intent(inout) :: muG      ! dynamic viscosity array
-         real(WP), intent(in), optional :: viscG               ! dynamic viscosity (for constant viscosity models)
+         real(WP), dimension(:,:,:), intent(inout) :: mu       ! dynamic viscosity array
+         real(WP), intent(in), optional :: visc                ! dynamic viscosity (for constant viscosity models)
          real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature for sutherlands model
-         integer, intent(in), optional :: IMIN,IMAX,JMIN,JMAX,KMIN,KMAX
       end subroutine visc_type
    end interface
    
@@ -279,7 +279,8 @@ contains
          allocate(this%Vi(this%cfg%imino_:this%cfg%imaxo_,this%cfg%jmino_:this%cfg%jmaxo_,this%cfg%kmino_:this%cfg%kmaxo_))
          allocate(this%Wi(this%cfg%imino_:this%cfg%imaxo_,this%cfg%jmino_:this%cfg%jmaxo_,this%cfg%kmino_:this%cfg%kmaxo_))
          allocate(this%Ma(this%cfg%imino_:this%cfg%imaxo_,this%cfg%jmino_:this%cfg%jmaxo_,this%cfg%kmino_:this%cfg%kmaxo_))
-         allocate(this%dynviscG(this%cfg%imino_:this%cfg%imaxo_,this%cfg%jmino_:this%cfg%jmaxo_,this%cfg%kmino_:this%cfg%kmaxo_)) !AS_visc: allocate dynamic viscosity array
+         allocate(this%dynviscG(this%cfg%imino_:this%cfg%imaxo_,this%cfg%jmino_:this%cfg%jmaxo_,this%cfg%kmino_:this%cfg%kmaxo_)) ! AS_visc: allocate dynamic viscosity array for gas
+         allocate(this%dynviscL(this%cfg%imino_:this%cfg%imaxo_,this%cfg%jmino_:this%cfg%jmaxo_,this%cfg%kmino_:this%cfg%kmaxo_)) ! AS_visc: allocate dynamic viscosity array for liquid
       end block allocate_work_arrays
       
       ! Prepare post-processing
@@ -305,10 +306,11 @@ contains
          call this%ens_out%add_scalar('TG',this%fs%TG)
          call this%ens_out%add_scalar('TL',this%fs%TL)
          call this%ens_out%add_scalar('Mach',this%Ma)
-         call this%ens_out%add_scalar('phys_visc',this%dynviscG) ! --> AS_visc: physical dynamic viscosity
-         call this%ens_out%add_scalar('beta',this%beta)          ! --> viscosity add for shock capturing (LAD)
-         call this%ens_out%add_scalar('visc',this%visc)          ! --> LES viscosity
-         call this%ens_out%add_scalar('total_visc',this%fs%visc) ! --> total viscosity (physical + LES + LAD)
+         call this%ens_out%add_scalar('phys_viscG',this%dynviscG) ! --> AS_visc: physical dynamic viscosity
+         call this%ens_out%add_scalar('phys_viscL',this%dynviscL) ! --> AS_visc: physical dynamic viscosity
+         call this%ens_out%add_scalar('beta',this%beta)           ! --> viscosity add for shock capturing (LAD)
+         call this%ens_out%add_scalar('visc',this%visc)           ! --> LES viscosity
+         call this%ens_out%add_scalar('total_visc',this%fs%visc)  ! --> total viscosity (physical + LES + LAD)
          call this%ens_out%add_scalar('label',this%ccl%id)
          ! Create surface mesh for PLIC
          this%smesh=surfmesh(nvar=1,name='plic')
@@ -415,25 +417,6 @@ contains
       class(shockdrop), intent(inout) :: this
       real(WP) :: dt
 
-      ! AS_visc
-      TEST_VISCOSITY: block
-         ! AS_visc: this seems to be working right now for constant dynamic --> we eventually need to call this in shockdrop_class.f90
-         real(WP) :: test_visc         
-         real(WP), dimension(this%cfg%imino_:this%cfg%imaxo_,this%cfg%jmino_:this%cfg%jmaxo_,this%cfg%kmino_:this%cfg%kmaxo_) :: test_T
-         test_visc = 1.0e-3_WP
-         test_T = 300.0_WP
-         ! AS check pointer association
-         if (associated(this%visc_modelG)) then
-            print *, "visc_modelG pointer is associated."
-            ! AS check constant viscosity model
-            !call this%visc_modelG(muG=this%dynviscG,viscG=test_visc,T=test_T,&
-            !IMIN=this%cfg%imino_,IMAX=this%cfg%imaxo_,JMIN=this%cfg%jmino_,JMAX=this%cfg%jmaxo_,KMIN=this%cfg%kmino_,KMAX=this%cfg%kmaxo_)
-            !print *, "test_mu after call:", this%dynviscG(:,1,1)
-         else
-            print *, "visc_modelG pointer is NOT associated."
-         end if
-      end block TEST_VISCOSITY
-      
       ! Increment time
       this%time%dt=dt
       call this%fs%get_cfl(dt=this%time%dt,cfl=this%time%cfl)
@@ -565,8 +548,6 @@ contains
       end if
    end subroutine output_ensight
    
-   !> AS_visc: in here we will need to update how we setup our viscosity, we will need to call our provided viscosity model
-
    !> Calculate viscosities
    subroutine prepare_viscosities(this)
       implicit none
@@ -574,11 +555,10 @@ contains
       real(WP) :: Lvof,Lrho,Gvof,Grho
       real(WP) :: Lvisc,Gvisc,Lbeta,Gbeta
       real(WP), parameter :: eps=1.0e-15_WP
-      real(WP), parameter :: Cb2v=0.1_WP
       integer :: i,j,k
       ! AS_visc: Get our physical viscosity
-      call this%visc_modelG(muG=this%dynviscG,viscG=this%cst_viscG,T=this%fs%TG,&
-             &IMIN=this%cfg%imino_,IMAX=this%cfg%imaxo_,JMIN=this%cfg%jmino_,JMAX=this%cfg%jmaxo_,KMIN=this%cfg%kmino_,KMAX=this%cfg%kmaxo_) ! how should we pass our viscG?
+      call this%visc_modelG(mu=this%dynviscG,visc=this%cst_viscG,T=this%fs%TG) ! gas 
+      call this%visc_modelL(mu=this%dynviscL,visc=this%cst_viscL,T=this%fs%TL) ! liquid
       ! Get LAD
       call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta)
       ! Get eddy viscosity
@@ -592,11 +572,11 @@ contains
          Grho=sum(       this%fs%Q (i-1:i+1,j-1:j+1,k-1:k+1,2))/(Gvof+eps)
          ! Harmonic average of VISC
          !Lvisc=Lrho*(this%cst_viscL+this%visc(i,j,k)); Gvisc=Grho*(this%cst_viscG+this%visc(i,j,k)); this%fs%VISC(i,j,k)=(Lvof+Gvof)/(Lvof/max(Lvisc,eps)+Gvof/max(Gvisc,eps))
-         Lvisc=Lrho*(this%cst_viscL+this%visc(i,j,k)); Gvisc=this%dynviscG(i,j,k)+Grho*this%visc(i,j,k); this%fs%VISC(i,j,k)=(Lvof+Gvof)/(Lvof/max(Lvisc,eps)+Gvof/max(Gvisc,eps))
+         Lvisc=this%dynviscL(i,j,k)+Lrho*this%visc(i,j,k); Gvisc=this%dynviscG(i,j,k)+Grho*this%visc(i,j,k); this%fs%VISC(i,j,k)=(Lvof+Gvof)/(Lvof/max(Lvisc,eps)+Gvof/max(Gvisc,eps))
          ! Harmonic average of BETA
          Lbeta=Lrho*this%beta(i,j,k); Gbeta=Grho*this%beta(i,j,k); this%fs%BETA(i,j,k)=(Lvof+Gvof)/(Lvof/max(Lbeta,eps)+Gvof/max(Gbeta,eps))
          ! Try adding BETA to visc
-         this%fs%VISC(i,j,k)=this%fs%VISC(i,j,k)+Cb2v*this%fs%BETA(i,j,k)
+         !this%fs%VISC(i,j,k)=this%fs%VISC(i,j,k)+this%fs%BETA(i,j,k)
       end do; end do; end do
    end subroutine prepare_viscosities
    
