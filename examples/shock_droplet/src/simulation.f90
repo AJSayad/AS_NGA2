@@ -260,35 +260,28 @@ contains
       VF=VFeq
    end subroutine PT_relax
 
-   ! AS_visc: there are better ways to set this up, but for now I'm going to pass indices just to get things working
-
-   !> constant dynamic viscosity model ! AS_visc
+   !> constant dynamic viscosity model
    subroutine cst_dyn_visc(mu,visc,T)
       implicit none
-      real(WP), dimension(:,:,:), intent(inout) :: mu      ! array to be populated 
-      real(WP), intent(in), optional :: visc               ! dynamic viscosity value
+      real(WP), dimension(:,:,:), intent(inout) :: mu       ! array to be populated 
+      real(WP), intent(in), optional :: visc                ! dynamic viscosity value
       real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature array (not used here, only here for interface compatibility)
       mu(:,:,:) = visc
    end subroutine cst_dyn_visc
 
-   !> sutherland model for viscosity ! AS_visc
+   !> sutherland model for viscosity
    subroutine sutherland_air(mu,visc,T)
       implicit none
+      integer :: i,j,k
       real(WP), dimension(:,:,:), intent(inout) :: mu       ! array to be populated 
       real(WP), intent(in), optional :: visc                ! dynamic viscosity value
       real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature array (only declared optional for interface compatibility)
-      integer :: i,j,k
-      real(WP), parameter :: mu0=1.716e-5_WP ! [Pa*s] https://www.cfd-online.com/Wiki/Sutherland%27s_law 
-      real(WP) :: T0=273.15_WP     ! [K] reference temperature
-      real(WP) :: S=110.4_WP       ! [K] sutherland constant for air
-
-      if(.not.present(T))then; print*, "[sutherland_air] Temperature not provided "; end if
-      ! AS_visc: currently only setup for nondimensional case, so we do not multiply by mu0
+      real(WP), parameter :: mu0=1.716e-5_WP                ! [Pa*s] https://www.cfd-online.com/Wiki/Sutherland%27s_law 
+      real(WP) :: T0=273.15_WP                              ! [K] reference temperature
+      real(WP) :: S=110.4_WP                                ! [K] sutherland constant for air
       do k=lbound(mu,3),ubound(mu,3); do j=lbound(mu,2),ubound(mu,2); do i=lbound(mu,1),ubound(mu,1)
-         ! AS: for nondimensional case, normalize every term by T0 as in 
-         mu(i,j,k) = (1.4042*(T(i,j,k)/T0)**1.5)/((T(i,j,k)/T0)+0.4042) ! https://pubs.aip.org/aip/pof/article/36/5/055146/3294212/Comparison-of-high-order-numerical-methodologies
-         ! mu(i,j,k) = ((T(i,j,k)/T0)**1.5)*((T0+S)/(T(i,j,k)+S))       ! non-dimensional sutherland model verified
-         ! mu(i,j,k) = mu0*((T(i,j,k)/T0)**1.5)*((T0+S)/(T(i,j,k)+S)) ! dimensional sutherland model 
+         ! coefficients come from normalizing each temperature term by T0 (T0/T0 + S/T0 = 1.4042, S/T0 = 0.4042) https://pubs.aip.org/aip/pof/article/36/5/055146/3294212/Comparison-of-high-order-numerical-methodologies
+         mu(i,j,k) = visc*(1.4042*(T(i,j,k))**1.5)/(T(i,j,k)+0.4042) ! nondim
       end do; end do; end do
    end subroutine sutherland_air
 
@@ -448,12 +441,11 @@ contains
          sd%fs%getPG=>get_PG; sd%fs%getCG=>get_CG; sd%fs%getSG=>get_SG; sd%fs%getTG=>get_TG
          ! We need to transfer our viscosities explicitly...
          sd%cst_viscL=viscL; sd%cst_viscG=viscG
-         ! AS_visc set viscosity model for liquid
+         ! set viscosity model for liquid and gas respectivley
          sd%visc_modelL=>cst_dyn_visc
-         ! AS_visc set viscosity model for gas
          sd%visc_modelG=>cst_dyn_visc
          !sd%visc_modelG=>sutherland_air
-         ! AS_visc: set initial viscosity
+         ! set initial viscosity
          call sd%visc_modelL(mu=sd%dynviscL,visc=viscL,T=sd%fs%TL)
          call sd%visc_modelG(mu=sd%dynviscG,visc=viscG,T=sd%fs%TG)
       end block setup_sd
@@ -528,10 +520,10 @@ contains
          ff%fs%getP=>get_PG; ff%fs%getC=>get_CG; ff%fs%getS=>get_SG; ff%fs%getT=>get_TG
          ! We need to transfer our viscosity explicitly...
          ff%cst_visc=viscG
-         ! AS_visc: set viscosity model for our farfield simulation
+         ! set viscosity model
          ff%visc_model=>cst_dyn_visc
          !ff%visc_model=>sutherland_air
-         ! AS_visc: set our initial viscosities
+         ! set our initial viscosities
          call ff%visc_model(mu=ff%dynvisc,visc=viscG,T=ff%fs%T)
       end block setup_ff
       
@@ -757,7 +749,7 @@ contains
          sdnew%cst_viscL=sd%cst_viscL; sdnew%cst_viscG=sd%cst_viscG
          ! Inform sdnew's timetracker of our current time, but leave n unchanged to make remeshing obvious
          sdnew%time%t=time%t
-         ! AS_visc: we need to reset our viscosity model
+         ! re set our viscosity model for new config
          sdnew%visc_modelL=>sd%visc_modelL
          sdnew%visc_modelG=>sd%visc_modelG
       end block setup_sdnew
