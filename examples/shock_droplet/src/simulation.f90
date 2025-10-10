@@ -284,10 +284,10 @@ contains
       real(WP), parameter :: T0=273.15_WP                   ! [K] reference temperature
       real(WP), parameter :: S=110.4_WP  
       if (dim_flag.eqv.(.false.))then ! nondimensional
-      do k=lbound(mu,3),ubound(mu,3); do j=lbound(mu,2),ubound(mu,2); do i=lbound(mu,1),ubound(mu,1)
-         ! coefficients come from normalizing each temperature term by T0 (T0/T0 + S/T0 = 1.4042, S/T0 = 0.4042) https://pubs.aip.org/aip/pof/article/36/5/055146/3294212/Comparison-of-high-order-numerical-methodologies
+         do k=lbound(mu,3),ubound(mu,3); do j=lbound(mu,2),ubound(mu,2); do i=lbound(mu,1),ubound(mu,1)
+            ! coefficients come from normalizing each temperature term by T0 (T0/T0 + S/T0 = 1.4042, S/T0 = 0.4042) https://pubs.aip.org/aip/pof/article/36/5/055146/3294212/Comparison-of-high-order-numerical-methodologies
             mu(i,j,k) = visc*(1.4042*(T(i,j,k))**1.5)/(T(i,j,k)+0.4042)
-      end do; end do; end do
+         end do; end do; end do
       else ! dimensional
          do k=lbound(mu,3),ubound(mu,3); do j=lbound(mu,2),ubound(mu,2); do i=lbound(mu,1),ubound(mu,1)
             mu(i,j,k) = mu0*((T(i,j,k)/T0)**1.5)*((T0 + S)/(T(i,j,k) + S))
