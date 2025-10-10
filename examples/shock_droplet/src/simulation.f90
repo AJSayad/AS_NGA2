@@ -61,6 +61,10 @@ module simulation
    real(WP) :: rho_ratio,c_ratio
    real(WP) :: rhoL,ML
    real(WP) :: ReG,viscG,viscL,visc_ratio
+   real(WP) :: tc2             ! characteristic time scale used for logging 
+   !> dimensional case
+   logical, public :: dim_flag ! true for running a dimensional case
+   real(WP) :: ddrop           ! drop diameter
    
 contains
    
@@ -277,12 +281,18 @@ contains
       real(WP), intent(in), optional :: visc                ! dynamic viscosity value
       real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature array (only declared optional for interface compatibility)
       real(WP), parameter :: mu0=1.716e-5_WP                ! [Pa*s] https://www.cfd-online.com/Wiki/Sutherland%27s_law 
-      real(WP) :: T0=273.15_WP                              ! [K] reference temperature
-      real(WP) :: S=110.4_WP                                ! [K] sutherland constant for air
+      real(WP), parameter :: T0=273.15_WP                   ! [K] reference temperature
+      real(WP), parameter :: S=110.4_WP  
+      if (dim_flag.eqv.(.false.))then ! nondimensional
       do k=lbound(mu,3),ubound(mu,3); do j=lbound(mu,2),ubound(mu,2); do i=lbound(mu,1),ubound(mu,1)
          ! coefficients come from normalizing each temperature term by T0 (T0/T0 + S/T0 = 1.4042, S/T0 = 0.4042) https://pubs.aip.org/aip/pof/article/36/5/055146/3294212/Comparison-of-high-order-numerical-methodologies
-         mu(i,j,k) = visc*(1.4042*(T(i,j,k))**1.5)/(T(i,j,k)+0.4042) ! nondim
+            mu(i,j,k) = visc*(1.4042*(T(i,j,k))**1.5)/(T(i,j,k)+0.4042)
       end do; end do; end do
+      else ! dimensional
+         do k=lbound(mu,3),ubound(mu,3); do j=lbound(mu,2),ubound(mu,2); do i=lbound(mu,1),ubound(mu,1)
+            mu(i,j,k) = mu0*((T(i,j,k)/T0)**1.5)*((T0 + S)/(T(i,j,k) + S))
+         end do; end do; end do
+      end if
    end subroutine sutherland_air
 
    !> Solver initialization
