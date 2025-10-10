@@ -2,6 +2,7 @@
 module simulation
    use precision,         only: WP
    use timetracker_class, only: timetracker
+   use shockgen_class,    only: shockgen
    use shockdrop_class,   only: shockdrop
    use ffshock_class,     only: ffshock
    use coupler_class,     only: coupler
@@ -9,10 +10,15 @@ module simulation
    use monitor_class,     only: monitor
    use timer_class,       only: timer
    implicit none
-   private; public :: simulation_init,simulation_run,simulation_final
+   private; public :: simulation_init,simulation_run,simulation_final,sgen_init,update_shockprofile
    
    !> Track time from here
    type(timetracker) :: time
+   
+   !> shock-Gen simulation
+   type(shockgen), pointer :: sg=>null()
+   real(WP) :: ushock          ! used to store the velocity of the shock (used for finding tmax in shock generator)
+   logical, public :: sgenflag ! true for running shockgenerator
    
    !> Shock-drop simulation - pointer since we will dynamically remesh
    type(shockdrop), pointer :: sd=>null()
@@ -307,6 +313,7 @@ contains
          use param,    only: param_read
          character(str_long) :: message
          ! read in case flags
+         call param_read('Shock generator' ,sgenflag)
          call param_read('Dimensional flag',dim_flag)
          if(dim_flag.eqv.(.true.))then
             call param_read('Drop diameter',ddrop)
@@ -328,7 +335,7 @@ contains
             rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP)
             p1=0.25_WP*rho1/GammaG*((GammaG+1.0_WP)*M1/(M1**2-1.0_WP))**2 ! Ensures that |u2-u1|=1
             p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)
-            u1=M1*sqrt(GammaG*p1/rho1)
+            u1=M1*sqrt(GammaG*p1/rho1); ushock = u1 ! store shock velocity for sgen
             u2=u1*rho1/rho2
             ! Now shift frame of reference to obtain moving shock
             u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2); u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)
@@ -365,6 +372,7 @@ contains
             rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP) ! post shock density  (Anderson 3.53)
             p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)    ! post shock pressure (Anderson 3.57)
             u1=M1*sqrt(GammaG*p1/rho1)                                     ! velocity in state 1 (left side of shock in fixed frame)
+            ushock = u1                                                    ! store shock velocity (used for shock generator to set tmax)
             u2=u1*rho1/rho2                                                ! velocity in state 2 (Anderson 3.53, right side of shock in fixed frame)
             ! we now shift frame of reference for a moving shock in lab frame
             u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2)                      ! post-shock gas velocity and post shock Mach number
@@ -379,6 +387,7 @@ contains
          end if ! dimensional flag
          ! Output case info
          if (amRoot) then
+            write(message,'("Shock generator  => ",L1)'    ) sgenflag; call log(message)
             write(message,'("Dimensional case => ",L1)'    ) dim_flag; call log(message)
             write(message,'("[Liquid EOS] => Gamma=",es12.5)') GammaL; call log(message)
             write(message,'("[Liquid EOS] =>  Pinf=",es12.5)')  PinfL; call log(message)
@@ -500,6 +509,7 @@ contains
          call sd%visc_modelG(mu=sd%dynviscG,visc=viscG,T=sd%fs%TG)
       end block setup_sd
 
+      ! AS_SGEN: CLEAN THIS BLOCK UP
       ! Generate initial conditions for shock-drop problem
       initialize_sd: block
          use irl_fortran_interface, only: setNumberOfPlanes,setPlane
@@ -550,6 +560,76 @@ contains
          ! Perform monitoring
          call sd%output_monitor()
       end block initialize_sd
+      
+      !> setup shock generator for shockdrop mesh
+      sd_shockgen: block
+         use param,    only: param_read
+         use parallel, only: group,amRoot
+         use mpi_f08,  only: MPI_GROUP,MPI_COMM_WORLD,MPI_DOUBLE_PRECISION
+         real(WP), dimension(3) :: X0
+         integer , dimension(3) :: meshsize,sgen_partition
+         integer  :: i,j,k,ierr,rank,nshock,shock_index
+         integer  :: q=2 ! (mpcomp RHOG is Q(i,j,k,2), spmcomp RHO is Q(i,j,k,1)) used in update_shockprofile
+         real(WP) :: dx,Xend
+         type(MPI_GROUP) :: sgen_group
+         real(WP), dimension(:), allocatable :: RHOG_profile,IG_profile,PG_profile,U_profile ! shock profile arrays
+         
+         if (sgenflag.eqv.(.true.))then               
+            ! allocate shock profile arrays on all procs
+            call param_read('nshock',nshock,default=8) ! set number of points for shock profile (left and right of center total pts = 2*nshock+1)
+            allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),U_profile(2*nshock+2)) ! add an extra point for U for staggered grid
+            RHOG_profile = 0.0_WP; PG_profile = 0.0_WP; IG_profile = 0.0_WP; U_profile = 0.0_WP
+
+            ! create shockgen group
+            call MPI_COMM_RANK(MPI_COMM_WORLD,rank,ierr)
+            call MPI_GROUP_INCL(sd%cfg%group,1,0,sgen_group,ierr)
+
+            ! Read in mesh size and desired partition
+            call param_read('Shock-drop dx',dx); call param_read('Shock-drop margin',Lmargin)
+            max_nx = 0; max_ny = 0; max_nz = 0; 
+
+            ! Set initial domain of size (2D)^3 centered on (0,0,0)
+            meshsize=min(nint([(ddrop+2.0_WP*Lmargin)/dx,(ddrop+2.0_WP*Lmargin)/dx,(ddrop+2.0_WP*Lmargin)/dx]),merge([max_nx,max_ny,max_nz],huge(1),[max_nx,max_ny,max_nz].gt.0))
+            X0=-0.5_WP*real(meshsize,WP)*dx
+            Xend = ddrop + Xs  !> let the shock travel 1 diameter 
+            if(amRoot)then     !> setup and run sg only on root proc
+               call sgen_init(dx,meshsize,X0,sgen_group,viscG,Xs,Xend,ushock)
+               !> run shock gen simulation
+               do while (.not.sg%time%done())
+                  call sg%step()
+               end do
+               call sg%finalize(nshock,Xend,RHOG_profile,IG_profile,PG_profile,U_profile) 
+            end if
+
+            ! broadcast shock profile arrays to all procs
+            call MPI_BCAST(RHOG_profile,2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr) 
+            call MPI_BCAST(IG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+            call MPI_BCAST(PG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+            call MPI_BCAST(U_profile,   2*nshock+2,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+            
+            ! find and update shock 
+            shock_index = ceiling(abs(Xs - sd%cfg%xm(1))/sd%cfg%dx(1))
+            call update_shockprofile(sd%fs%RHOG(:,:,:),sd%fs%PG(:,:,:),sd%fs%IG(:,:,:),sd%fs%U(:,:,:), &
+                                    & RHOG_profile,PG_profile,IG_profile,U_profile,sd%cfg%imino_,sd%cfg%imaxo_, &
+                                    & sd%cfg%jmino_,sd%cfg%jmaxo_,sd%cfg%kmino_,sd%cfg%kmaxo_,nshock,shock_index) 
+            ! rebuild conserved quantites
+            call sd%fs%build_interface()
+            ! Initialize conserved variables
+            sd%fs%Q(:,:,:,1)=        sd%fs%VF *sd%fs%RHOL
+            sd%fs%Q(:,:,:,2)=(1.0_WP-sd%fs%VF)*sd%fs%RHOG
+            sd%fs%Q(:,:,:,3)= sd%fs%Q(:,:,:,1)*sd%fs%IL
+            sd%fs%Q(:,:,:,4)= sd%fs%Q(:,:,:,2)*sd%fs%IG 
+            call sd%fs%get_momentum() 
+            ! Communicate conserved variables
+            do i=1,sd%fs%nQ; call sd%fs%cfg%sync(sd%fs%Q(:,:,:,i)); end do
+            ! Rebuild primitive variables
+            call sd%fs%get_primitive() 
+            ! Compute local Mach number
+            sd%Ma=sqrt(sd%Ui**2+sd%Vi**2+sd%Wi**2)/sd%fs%C
+            ! deallocate vars
+            deallocate(RHOG_profile,IG_profile,PG_profile,U_profile)
+         end if ! shockgen flag 
+      end block sd_shockgen
       
       ! Setup far-field shock simulation - all cores
       setup_ff: block
@@ -604,6 +684,68 @@ contains
          ! Perform monitoring
          call ff%output_monitor()
       end block initialize_ff
+      
+      ! AS_SGEN: CLEAN THIS BLOCK UP
+      !> setup shock generator for shockdrop mesh
+      ff_shockgen: block
+         use param,    only: param_read
+         use parallel, only: group,amRoot
+         use mpi_f08,  only: MPI_GROUP,MPI_COMM_WORLD,MPI_DOUBLE_PRECISION
+         real(WP), dimension(3) :: X0
+         integer , dimension(3) :: meshsize,sgen_partition
+         integer  :: i,j,k,ierr,rank,nshock,shock_index
+         integer  :: q=1 ! (mpcomp RHOG is Q(i,j,k,2) but spmcomp RHO is Q(i,j,k,1)) used in update_shockprofile
+         real(WP) :: dx,Xend
+         type(MPI_GROUP) :: sgen_group
+         real(WP), dimension(:), allocatable :: RHOG_profile,IG_profile,PG_profile,U_profile ! shock profile arrays
+
+         if (sgenflag.eqv.(.true.))then            
+            ! allocate shock profile arrays on all procs
+            call param_read('nshock',nshock,default=8) ! set number of points for shock profile (left and right of center total pts = 2*nshock+1)
+            allocate(RHOG_profile(2*nshock+1),PG_profile(2*nshock+1),IG_profile(2*nshock+1),U_profile(2*nshock+2)) ! add an extra point for U for staggered grid
+            RHOG_profile = 0.0_WP; PG_profile = 0.0_WP; IG_profile = 0.0_WP; U_profile = 0.0_WP
+
+            ! create shockgen group
+            call MPI_COMM_RANK(MPI_COMM_WORLD,rank,ierr)
+            call MPI_GROUP_INCL(ff%cfg%group,1,0,sgen_group,ierr)
+
+            ! Read in mesh size and desired partition
+            call param_read('Farfield dx',dx)
+            call param_read('Farfield nx',meshsize); meshsize(2) = 1; meshsize(3) = 1; ! intended as 1D 
+            X0=-0.5_WP*real(meshsize,WP)*dx      !< This assumes that the domain is centered on (0,0,0)
+            call param_read('Farfield X0',X0(1)) !< This shifts the domain in x based on user input
+            Xend = ddrop + Xs ! let the shock travel 1 drop diameter
+            if(amRoot)then !> setup and run sg only on root proc
+               call sgen_init(dx,meshsize,X0,sgen_group,viscG,Xs,Xend,ushock)
+               !> run shock gen simulation
+               do while (.not.sg%time%done())  
+                  call sg%step()
+               end do
+               call sg%finalize(nshock,Xend,RHOG_profile,IG_profile,PG_profile,U_profile) 
+            end if
+
+            ! broadcast shock profile arrays to all procs
+            call MPI_BCAST(RHOG_profile,2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr) 
+            call MPI_BCAST(IG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+            call MPI_BCAST(PG_profile,  2*nshock+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+            call MPI_BCAST(U_profile,   2*nshock+1+1,MPI_DOUBLE_PRECISION,0,MPI_COMM_WORLD,ierr)
+
+            ! find and update shock
+            shock_index = ceiling(abs(Xs - ff%cfg%xm(1))/ff%cfg%dx(1)) ! --> comes from  Loc = shock_index*dx --> shock_index = Loc/dx
+            call update_shockprofile(ff%fs%Q(:,:,:,q),ff%fs%P(:,:,:),ff%fs%I(:,:,:),ff%fs%U(:,:,:), &
+                                    & RHOG_profile,PG_profile,IG_profile,U_profile,ff%cfg%imino_,ff%cfg%imaxo_, & 
+                                    & ff%cfg%jmino_,ff%cfg%jmaxo_,ff%cfg%kmino_,ff%cfg%kmaxo_,nshock,shock_index) 
+            !Initialize conserved variables
+            ff%fs%Q(:,:,:,2)=ff%fs%Q(:,:,:,1)*ff%fs%I
+            call ff%fs%get_momentum()
+            ! Rebuild primitive variables
+            call ff%fs%get_primitive()
+            ! Compute local Mach number
+            ff%Ma=sqrt(ff%Ui**2+ff%Vi**2+ff%Wi**2)/ff%fs%C
+            ! deallocate profile arrays
+            deallocate(RHOG_profile,IG_profile,PG_profile,U_profile) 
+         end if ! sgen flag
+      end block ff_shockgen
       
       ! Create couplers
       create_couplers: block
@@ -754,6 +896,89 @@ contains
       
    end subroutine simulation_run
    
+   ! AS_SGEN: CLEAN THIS BLOCK UP, ADD VISCOSITY MOFELS FOR SGEN here?
+   subroutine sgen_init(dx,meshsize,X0,sgen_group,viscG,Xs,Xend,ushock)
+      use param,    only: param_read
+      use parallel, only: group,amRoot
+      use mpi_f08,  only: MPI_GROUP,MPI_COMM_WORLD,MPI_DOUBLE_PRECISION
+      implicit none
+      real(WP), intent(in)  :: dx,viscG,ushock,Xs,Xend
+      real(WP), dimension(3), intent(in) :: X0
+      integer, dimension(3), intent(in) :: meshsize
+      type(MPI_GROUP), intent(in) :: sgen_group
+      integer, dimension(3) :: sgen_partition=(/1,1,1/) ! run in serial
+      integer  :: i,j,k
+      ! Allocate and initialize the solver
+      allocate(sg); call sg%initialize(dx=dx,meshsize=meshsize,startloc=X0,sgen_group=sgen_group,partition=sgen_partition)
+      ! Provide thermodynamic model
+      sg%fs%getP=>get_PG; sg%fs%getC=>get_CG; sg%fs%getS=>get_SG; sg%fs%getT=>get_TG
+      ! We need to transfer our viscosity explicitly...
+      sg%cst_visc=viscG
+      ! choose our viscosity model
+      sg%visc_model=>cst_dyn_visc
+      ! time info
+      sg%time%dtmax = time%dtmax; sg%time%dt = time%dtmax; sg%time%cflmax = time%cflmax 
+      sg%ens_evt%tper = ens_evt%tper    ! uncomment this line (and ensight lines in shockgen_class to save data files for sgen)
+      sg%time%tmax = (Xend - Xs)/ushock ! this is how long it will take to reach Xend
+      do k=sg%cfg%kmino_,sg%cfg%kmaxo_
+         do j=sg%cfg%jmino_,sg%cfg%jmaxo_
+            do i=sg%cfg%imino_,sg%cfg%imaxo_
+               sg%fs%U(i,j,k)=u2*Hshock(Xs-sg%fs%cfg%x(i),delta=0.5_WP*sg%fs%dx); sg%fs%V(i,j,k)=0.0_WP; sg%fs%W(i,j,k)=0.0_WP ! velocity
+               sg%fs%Q(i,j,k,1)=rho1+(rho2-rho1)*Hshock(Xs-sg%fs%cfg%xm(i),delta=0.5_WP*sg%fs%dx)                              ! density
+               sg%fs%P   (i,j,k)=p1  +(p2  -p1  )*Hshock(Xs-sg%fs%cfg%xm(i),delta=0.5_WP*sg%fs%dx)                             ! pressure
+               sg%fs%I   (i,j,k)=(sg%fs%P(i,j,k)+GammaG*PinfG)/(sg%fs%Q(i,j,k,1)*(GammaG-1.0_WP))                              ! internal energy
+            end do
+         end do
+      end do
+      ! Initialize conserved variables
+      sg%fs%Q(:,:,:,2)=sg%fs%Q(:,:,:,1)*sg%fs%I
+      call sg%fs%get_momentum()
+      ! Rebuild primitive variables
+      call sg%fs%get_primitive()
+      ! Interpolate velocity
+      call sg%fs%interp_vel(sg%Ui,sg%Vi,sg%Wi)
+      ! Compute local Mach number
+      sg%Ma=sqrt(sg%Ui**2+sg%Vi**2+sg%Wi**2)/sg%fs%C
+      call sg%output_ensight(t=sg%time%t)
+   end subroutine sgen_init
+   
+   subroutine update_shockprofile(rhog,pg,ig,u,rhog_profile,pg_profile,ig_profile,U_profile,IMIN,IMAX,JMIN,JMAX,KMIN,KMAX,nshock,shock_index)
+      use parallel, only: amRoot
+      implicit none
+      integer, intent(in) :: shock_index,nshock,IMIN,IMAX,JMIN,JMAX,KMIN,KMAX
+      real(WP), dimension(:), intent(in) :: rhog_profile,pg_profile,ig_profile,u_profile
+      real(WP), dimension(IMIN:IMAX,JMIN:JMAX,KMIN:KMAX)  , intent(inout) :: rhog,pg,ig,u
+      integer :: i
+      ! zero everything out we do this to ensure there are no leftover values from Heaviside function (overkill)
+      rhog = 0.0_WP; pg = 0.0_WP; ig = 0.0_WP; u = 0.0_WP
+      ! set initial values as a discontinuity
+      do i = IMIN,IMAX
+         if (i.lt.shock_index) then
+            rhog(i,:,:) = rho2
+            pg  (i,:,:) = p2
+            ig  (i,:,:) =(p2 + GammaG*PinfG)/(rho2*(GammaG-1.0_WP))
+            u   (i,:,:) = u2
+         else
+            rhog(i,:,:) = rho1
+            pg  (i,:,:) = p1
+            ig  (i,:,:) =(p1 + GammaG*PinfG)/(rho1*(GammaG-1.0_WP))
+            u   (i,:,:) = u1
+         end if
+      end do
+      ! overwrite with shock profile where appropriate
+      do i = IMIN,IMAX
+         if ((i.ge.shock_index - nshock).and.(i.le. shock_index + nshock)) then   ! shock-profile
+            rhog(i,:,:) = rhog_profile(i - (shock_index - nshock) + 1)
+            pg  (i,:,:) = pg_profile  (i - (shock_index - nshock) + 1)
+            ig  (i,:,:) = ig_profile  (i - (shock_index - nshock) + 1)
+         end if
+      end do
+      do i = IMIN,IMAX
+         if ((i.ge.shock_index - nshock).and.(i.le. shock_index + nshock+1)) then ! shock-profile for velocity (includes added point for cell faces)
+            u(i,:,:) = u_profile(i - (shock_index - nshock) + 1)
+         end if
+      end do
+   end subroutine update_shockprofile
    
    !> Remesh sd to follow the drop
    subroutine remesh()
