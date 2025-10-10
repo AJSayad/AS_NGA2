@@ -343,7 +343,12 @@ contains
             CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
             ! Viscous parameters
             call param_read('Gas Reynolds number',ReG); viscG=rho1*1.0_WP*u2/ReG 
-            call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG/rho_ratio
+            call param_read('Viscosity ratio',visc_ratio)
+            if (visc_ratio.eq.0.0_WP) then ! if visc_ratio=0, we're running inviscid
+               viscL=0.0_WP; viscG=0.0_WP
+            else
+               viscL=visc_ratio*viscG/rho_ratio
+            end if
             tc2 = (ddrop/u2)*sqrt(rhoL/rho2) ! characteristic time scale for logging
          else ! run dimensional case
             call param_read('Liquid Pinf',PinfL)
