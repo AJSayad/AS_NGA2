@@ -60,10 +60,6 @@ SphHarm m : 1       !
 SphHarm amp : 0.0   ! No initial perturbation
 SphHarm phase : 0.0 ! Arbitrary
 
-!- Time ---------------
-Shock-drop dt :  4.2e-9
-Shock-drop CFL : 0.5
-
 # Far-field simulation
 !- Parallelization ----
 Farfield partition : 8 1 1
