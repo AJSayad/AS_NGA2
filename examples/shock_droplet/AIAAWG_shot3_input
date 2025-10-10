@@ -9,16 +9,16 @@ Liquid gamma :      6.12
 Density ratio :     815
 Sound speed ratio : 4.3
 !------- inviscid --------
-Shock Mach number : 5.12
-Shock location :   -0.6
+Shock Mach number : 5.298
+Shock location :   -1e-3
 !------- viscous ---------
 Gas Reynolds number : 1e5
 Viscosity ratio :     58.3 ! set this to zero for nondimensional invisicd case
 
 # dimensional flow parameters (for dimensional runs only)
 # Liquid
-Drop diameter:  1.0
-Liquid density: 815
+Drop diameter: 0.00187
+Liquid density: 1000
 Liquid dynamic viscosity: 1.89e-4 ! set to zero and constant for inviscid case
 Liquid Pinf: 3.43e8
 Liquid specific heat (constant vol): 4130.2 
@@ -29,29 +29,25 @@ Gas dynamic viscosity: 1.813e-5
 Gas specific heat (constant vol): 968.86 ! cv = R_air/(gamm_g-1) from IC, R_air = 290.66 J/(kg*K)
 
 # Maximum simulation time
-Max time : 30
+Max time : 5.147e-5 ! tau = 3.5
 
 # Postprocessing output
-Ensight output period : 0.1
-Drop analysis period :  0.1
+Ensight output period : 1e-6
+Drop analysis period  : 1e-6
 
 # Shock-drop simulation
 !- Parallelization ----
-Shock-drop partition : 2 4 1
+Shock-drop partition : 4 4 1 
 
 !- Mesh ---------------
-Shock-drop dx :     0.01
+Shock-drop dx :     1.87e-5
 Shock-drop max nx : 250
 Shock-drop max ny : 250
 Shock-drop max nz : 1
-Shock-drop margin : 0.25
-
-!- Time ---------------
-Shock-drop dt :  2.5e-3
-Shock-drop CFL : 1
+Shock-drop margin : 4.675e-4
 
 !- Remeshing ----------
-Remeshing period :  0.2
+Remeshing period :  4.2e-7
 
 !- Intial Perturbations-
 SphHarm Nmode : 1
@@ -66,9 +62,9 @@ Shock-drop CFL : 0.5
 
 # Far-field simulation
 !- Parallelization ----
-Farfield partition : 8 1 1
+Farfield partition : 4 4 1
 
 !- Mesh ---------------
-Farfield dx : 0.03
-Farfield nx : 250 250 1
-Farfield X0 : -2
+Farfield dx : 5.61e-5
+Farfield nx : 275 275 1
+Farfield X0 : -3.74e-3
