@@ -476,7 +476,8 @@ contains
          call param_read('Shock-drop max nz',max_nz,default=0)
          call param_read('Shock-drop partition',partition)
          ! Set initial domain of size (2D)^3 centered on (0,0,0)
-         meshsize=min(nint([(1.0_WP+2.0_WP*Lmargin)/dx,(1.0_WP+2.0_WP*Lmargin)/dx,(1.0_WP+2.0_WP*Lmargin)/dx]),merge([max_nx,max_ny,max_nz],huge(1),[max_nx,max_ny,max_nz].gt.0))
+         !meshsize=min(nint([(1.0_WP+2.0_WP*Lmargin)/dx,(1.0_WP+2.0_WP*Lmargin)/dx,(1.0_WP+2.0_WP*Lmargin)/dx]),merge([max_nx,max_ny,max_nz],huge(1),[max_nx,max_ny,max_nz].gt.0))
+         meshsize=min(nint([(ddrop+2.0_WP*Lmargin)/dx,(ddrop+2.0_WP*Lmargin)/dx,(ddrop+2.0_WP*Lmargin)/dx]),merge([max_nx,max_ny,max_nz],huge(1),[max_nx,max_ny,max_nz].gt.0))
          X0=-0.5_WP*real(meshsize,WP)*dx
          ! Allocate and initialize the shock-drop solver
          allocate(sd); call sd%initialize(dx=dx,meshsize=meshsize,startloc=X0,group=group,partition=partition,continue_monitor=.false.)
@@ -676,10 +677,10 @@ contains
          ! Compute perturbation
          perturb=0.0_WP
          do i=1,nsh_modes
-            perturb=perturb+amp_modes(i)*spherical_harmonic(l_modes(i),m_modes(i),theta,phi+phase_modes(i))
+            perturb=perturb+ddrop*amp_modes(i)*spherical_harmonic(l_modes(i),m_modes(i),theta,phi+phase_modes(i))
          end do
-         ! Level set function for a sphere with radius 0.5 and perturbation
-         G=0.5_WP+perturb-r
+         ! Level set function for a sphere with radius 0.5*ddrop and perturbation
+         G = 0.5_WP*ddrop+perturb-r 
       end function levelset_drop
    end subroutine simulation_init
    
