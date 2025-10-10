@@ -365,7 +365,6 @@ contains
             rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP) ! post shock density  (Anderson 3.53)
             p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)    ! post shock pressure (Anderson 3.57)
             u1=M1*sqrt(GammaG*p1/rho1)                                     ! velocity in state 1 (left side of shock in fixed frame)
-            ushock = u1                                                    ! store shock velocity (used for shock generator to set tmax)
             u2=u1*rho1/rho2                                                ! velocity in state 2 (Anderson 3.53, right side of shock in fixed frame)
             ! we now shift frame of reference for a moving shock in lab frame
             u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2)                      ! post-shock gas velocity and post shock Mach number
