@@ -306,6 +306,13 @@ contains
          use parallel, only: amRoot
          use param,    only: param_read
          character(str_long) :: message
+         ! read in case flags
+         call param_read('Dimensional flag',dim_flag)
+         if(dim_flag.eqv.(.true.))then
+            call param_read('Drop diameter',ddrop)
+         else
+            ddrop = 1.0_WP
+         end if 
          ! Set PinfG to zero
          PinfG=0.0_WP
          ! Read in Gammas
@@ -314,34 +321,61 @@ contains
          ! Read in shock Mach number and location
          call param_read('Shock Mach number',Ms)
          call param_read('Shock location',Xs)
-         ! First generate static shock with normalized pre-shock conditions
-         M1=Ms
-         rho1=1.0_WP
-         rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP)
-         p1=0.25_WP*rho1/GammaG*((GammaG+1.0_WP)*M1/(M1**2-1.0_WP))**2 ! Ensures that |u2-u1|=1
-         p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)
-         u1=M1*sqrt(GammaG*p1/rho1)
-         u2=u1*rho1/rho2
-         ! Now shift frame of reference to obtain moving shock
-         u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2); u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)
-         ! Read in density ratio and use it to set liquid density
-         call param_read('Density ratio',rho_ratio); rhoL=rho_ratio*rho1
-         ! Read in liquid Mach number and use it to set PinfL
-         !call param_read('Liquid Mach number',ML)
-         !PinfL=(u2/ML)**2*rhoL/GammaL-p1
-         !c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)
-         ! Read in sound speed ratio and use it to set PinfL
-         call param_read('Sound speed ratio',c_ratio)
-         PinfL=p1*(rho_ratio*c_ratio**2*GammaG/GammaL-1.0_WP)
-         ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)
-         ! Set heat capacities corresponding to a normalized pre-shock and liquid temperature
-         CvL=(p1+PinfL)/(rhoL*(GammaL-1.0_WP))
-         CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
-         ! Viscous parameters
-         call param_read('Gas Reynolds number',ReG); viscG=rho1*1.0_WP*u2/ReG 
-         call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG/rho_ratio
+         if (dim_flag.eqv.(.false.))then ! run nondimensional
+            ! First generate static shock with normalized pre-shock conditions
+            M1=Ms
+            rho1=1.0_WP
+            rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP)
+            p1=0.25_WP*rho1/GammaG*((GammaG+1.0_WP)*M1/(M1**2-1.0_WP))**2 ! Ensures that |u2-u1|=1
+            p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)
+            u1=M1*sqrt(GammaG*p1/rho1)
+            u2=u1*rho1/rho2
+            ! Now shift frame of reference to obtain moving shock
+            u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2); u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)
+            ! Read in density ratio and use it to set liquid density
+            call param_read('Density ratio',rho_ratio); rhoL=rho_ratio*rho1
+            ! Read in sound speed ratio and use it to set PinfL
+            call param_read('Sound speed ratio',c_ratio)
+            PinfL=p1*(rho_ratio*c_ratio**2*GammaG/GammaL-1.0_WP)
+            ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)
+            ! Set heat capacities corresponding to a normalized pre-shock and liquid temperature
+            CvL=(p1+PinfL)/(rhoL*(GammaL-1.0_WP))
+            CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
+            ! Viscous parameters
+            call param_read('Gas Reynolds number',ReG); viscG=rho1*1.0_WP*u2/ReG 
+            call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG/rho_ratio
+            tc2 = (ddrop/u2)*sqrt(rhoL/rho2) ! characteristic time scale for logging
+         else ! run dimensional case
+            call param_read('Liquid Pinf',PinfL)
+            call param_read('Liquid density',rhoL)
+            call param_read('Liquid specific heat (constant vol)',CvL)
+            call param_read('Liquid dynamic viscosity',viscL)
+            ! Read in Gas variables
+            call param_read('Pre-shock density',rho1)
+            call param_read('Pre-shock pressure',p1)
+            call param_read('Gas specific heat (constant vol)',CvG)
+            call param_read('Gas dynamic viscosity',viscG)
+            ! Use shock relations (shock fixed frame) to calculate post-shock conditions 
+            M1 = Ms                                                        ! set M1 equal to shock Mach number for now 
+            rho2=rho1*(GammaG+1.0_WP)*M1**2/((GammaG-1.0_WP)*M1**2+2.0_WP) ! post shock density  (Anderson 3.53)
+            p2=p1*(2.0_WP*GammaG/(GammaG+1.0_WP)*(M1**2-1.0_WP)+1.0_WP)    ! post shock pressure (Anderson 3.57)
+            u1=M1*sqrt(GammaG*p1/rho1)                                     ! velocity in state 1 (left side of shock in fixed frame)
+            ushock = u1                                                    ! store shock velocity (used for shock generator to set tmax)
+            u2=u1*rho1/rho2                                                ! velocity in state 2 (Anderson 3.53, right side of shock in fixed frame)
+            ! we now shift frame of reference for a moving shock in lab frame
+            u2=abs(u2-u1); M2=u2/sqrt(GammaG*p2/rho2)                      ! post-shock gas velocity and post shock Mach number
+            u1=0.0_WP; M1=u1/sqrt(GammaG*p1/rho1)                          ! set pre-shock gas velocity to zero and update pre-shock Mach number
+            ! compute some non-dimensional parameters for log files
+            rho_ratio  = rhoL/rho1                                         ! density ratio
+            visc_ratio = viscL/viscG                                       ! viscosity ratio
+            ReG = u2*ddrop/viscG                                           ! ***Reynolds number based on post-shock conditions***
+            c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)      ! sound speed ratio
+            ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)                             ! liquid Mach number from SG EOS
+            tc2 = (ddrop/u2)*sqrt(rhoL/rho2)                               ! characteristic time scale for logging
+         end if ! dimensional flag
          ! Output case info
          if (amRoot) then
+            write(message,'("Dimensional case => ",L1)'    ) dim_flag; call log(message)
             write(message,'("[Liquid EOS] => Gamma=",es12.5)') GammaL; call log(message)
             write(message,'("[Liquid EOS] =>  Pinf=",es12.5)')  PinfL; call log(message)
             write(message,'("[Liquid EOS] =>    Cv=",es12.5)')    CvL; call log(message)
@@ -363,6 +397,7 @@ contains
             write(message,'("[Viscosity ratio]  => muL/muG=",es12.5)') visc_ratio; call log(message)
             write(message,'("[Gas    viscosity] =>     muG=",es12.5)')      viscG; call log(message)
             write(message,'("[Liquid viscosity] =>     muL=",es12.5)')      viscL; call log(message)
+            write(message,'("[Characteristic Time Scale] => tc2=",es12.5)')      tc2; call log(message)
          end if
       end block initialize_parameters
       
