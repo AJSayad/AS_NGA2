@@ -329,7 +329,7 @@ contains
          CvG=(p1+PinfG)/(rho1*(GammaG-1.0_WP))
          ! Viscous parameters
          call param_read('Gas Reynolds number',ReG); viscG=rho1*1.0_WP*u2/ReG 
-         call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG/rho_ratio
+         call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG
          ! Output case info
          if (amRoot) then
             write(message,'("[Liquid EOS] => Gamma=",es12.5)') GammaL; call log(message)
