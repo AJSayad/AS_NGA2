@@ -372,7 +372,7 @@ contains
             ! compute some non-dimensional parameters for log files
             rho_ratio  = rhoL/rho1                                         ! density ratio
             visc_ratio = viscL/viscG                                       ! viscosity ratio
-            ReG = u2*ddrop/viscG                                           ! ***Reynolds number based on post-shock conditions***
+            ReG = rho1*u2*ddrop/viscG                                           ! ***Reynolds number based on post-shock conditions***
             c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)      ! sound speed ratio
             ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)                             ! liquid Mach number from SG EOS
             tc2 = (ddrop/u2)*sqrt(rhoL/rho2)                               ! characteristic time scale for logging
