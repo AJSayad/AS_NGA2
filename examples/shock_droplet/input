@@ -1,4 +1,5 @@
 # --- case flags ---
+Shock generator:  true   # true for numerical shock initialization
 Dimensional flag: true   # true for running a dimensional simulation
 
 # Adimensional flow parameters
