@@ -347,7 +347,7 @@ contains
             if (visc_ratio.eq.0.0_WP) then ! if visc_ratio=0, we're running inviscid
                viscL=0.0_WP; viscG=0.0_WP
             else
-               viscL=visc_ratio*viscG/rho_ratio
+               viscL=visc_ratio*viscG
             end if
             tc2 = (ddrop/u2)*sqrt(rhoL/rho2) ! characteristic time scale for logging
          else ! run dimensional case
