@@ -67,8 +67,8 @@ module ffshock_class
          import :: WP
          implicit none
          real(WP), dimension(:,:,:), intent(inout) :: mu       ! dynamic viscosity array
-         real(WP), intent(in), optional :: visc                ! dynamic viscosity (for constant viscosity models)
-         real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature for sutherlands model
+         real(WP), intent(in) :: visc                          ! dynamic viscosity (for constant viscosity models)
+         real(WP), dimension(:,:,:), intent(in)    :: T        ! temperature for sutherlands model
       end subroutine visc_type
    end interface
    
@@ -380,7 +380,7 @@ contains
       call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta              )
       ! Get eddy viscosity
       call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
-      ! Try adding BETA to 
+      ! Try adding BETA to visc
       this%fs%VISC=this%fs%VISC+Cb2v*this%fs%BETA+this%dynvisc ! beta and LES kinematic viscosities are already multiplied by density (see above)
    end subroutine prepare_viscosities
    
