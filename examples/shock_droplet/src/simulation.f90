@@ -276,18 +276,16 @@ contains
       real(WP), dimension(:,:,:), intent(inout) :: mu ! viscosity array
       real(WP), dimension(:,:,:), intent(in)    :: T  ! temperature array
       ! dimensional variables
-      real(WP), parameter :: mu0=1.716e-5_WP          ! [Pa*s] https://www.cfd-online.com/Wiki/Sutherland%27s_law 
-      real(WP) :: T0=273.15_WP                        ! [K] reference temperature
+      real(WP) :: T0=273.15_WP                        ! [K] reference temperature https://www.cfd-online.com/Wiki/Sutherland%27s_law 
       real(WP) :: S=110.4_WP                          ! [K] sutherland constant for air
       ! non-dimensional variables
       real(WP), intent(in) :: visc                    ! reference nondim dynamic viscosity (from Re # calc)
-      real(WP) :: T0_nondim=1.0_WP                    ! reference nondim temperature from ambient conditions --> enforced to be 1 by our nondim setup
       real(WP) :: S_nondim                            ! non-dimensional sutherland constant
 
-      S_nondim = (S*T0_nondim)/T0 ! compute non-dimensional sutherland constant 
+      S_nondim = S/T0 ! compute non-dimensional sutherland constant from (S*T0_nondim)/T0 where T0_nondim=1 due to our normalization
       do k=lbound(mu,3),ubound(mu,3); do j=lbound(mu,2),ubound(mu,2); do i=lbound(mu,1),ubound(mu,1)
          ! AS: I verified this using our matlab script and the simulation results
-         mu(i,j,k) = visc*((T(i,j,k)/T0_nondim)**1.5)*((T0_nondim + S_nondim)/(T(i,j,k) + S_nondim)) ! non dimensional sutherlands model
+         mu(i,j,k) = visc*((T(i,j,k))**1.5)*((1.0_WP + S_nondim)/(T(i,j,k) + S_nondim)) ! non dimensional sutherlands model
       end do; end do; end do
    end subroutine sutherland_air
 
