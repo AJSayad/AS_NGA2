@@ -267,9 +267,9 @@ contains
    !> constant dynamic viscosity model
    subroutine cst_dyn_visc(mu,visc,T)
       implicit none
-      real(WP), dimension(:,:,:), intent(inout) :: mu       ! array to be populated 
-      real(WP), intent(in), optional :: visc                ! dynamic viscosity value
-      real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature array (not used here, only here for interface compatibility)
+      real(WP), dimension(:,:,:), intent(inout) :: mu ! array to be populated 
+      real(WP), intent(in) :: visc                    ! dynamic viscosity value
+      real(WP), dimension(:,:,:), intent(in) :: T     ! temperature array (not used here, only here for interface compatibility)
       mu(:,:,:) = visc
    end subroutine cst_dyn_visc
 
