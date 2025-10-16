@@ -26,9 +26,6 @@ module ffshock_class
       type(spcomp) :: fs        !< Single-phase compressible solver
       type(timetracker) :: time !< Time info
 
-      !> viscosity model
-      procedure(visc_type), pointer, nopass :: visc_model=>NULL()
-      
       !> Add an LPT solver
       type(lpt), public :: lp
       
@@ -61,17 +58,6 @@ module ffshock_class
       procedure, private :: apply_bconds           !< Apply boundary conditions
    end type ffshock
 
-   abstract interface 
-      !> viscosity model type
-      subroutine visc_type(mu,visc,T)
-         import :: WP
-         implicit none
-         real(WP), dimension(:,:,:), intent(inout) :: mu       ! dynamic viscosity array
-         real(WP), intent(in) :: visc                          ! dynamic viscosity (for constant viscosity models)
-         real(WP), dimension(:,:,:), intent(in)    :: T        ! temperature for sutherlands model
-      end subroutine visc_type
-   end interface
-   
 contains
    
    
@@ -375,7 +361,7 @@ contains
       integer :: i,j,k
       real(WP), parameter :: Cb2v=0.1_WP
       ! get physical viscosity
-      call this%visc_model(mu=this%dynvisc,visc=this%cst_visc,T=this%fs%T)
+      call this%fs%get_phys_visc(mu=this%dynvisc,visc_cst=this%cst_visc)
       ! Get LAD
       call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta              )
       ! Get eddy viscosity
