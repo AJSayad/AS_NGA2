@@ -67,8 +67,8 @@ module ffshock_class
          import :: WP
          implicit none
          real(WP), dimension(:,:,:), intent(inout) :: mu       ! dynamic viscosity array
-         real(WP), intent(in), optional :: visc                ! dynamic viscosity (for constant viscosity models)
-         real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature for sutherlands model
+         real(WP), intent(in) :: visc                          ! dynamic viscosity (for constant viscosity models)
+         real(WP), dimension(:,:,:), intent(in)    :: T        ! temperature for sutherlands model
       end subroutine visc_type
    end interface
    
