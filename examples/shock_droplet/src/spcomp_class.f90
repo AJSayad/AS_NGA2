@@ -26,6 +26,9 @@ module spcomp_class
       procedure(Cfunc_type), pointer, nopass :: getC=>NULL()
       procedure(Sfunc_type), pointer, nopass :: getS=>NULL()
       
+      ! Pointer to subroutine for viscosity model
+      procedure(visc_type), pointer, nopass :: visc_model=>NULL()  
+      
       ! Conserved variables: 1=RHO, 2=RHO*I, 3=RHO*U, 4=RHO*V, 5=RHO*W
       integer :: nQ
       real(WP), dimension(:,:,:,:), allocatable :: Q,Qold
@@ -81,6 +84,7 @@ module spcomp_class
       procedure :: rhs                                    !< Compute rhs of our equations using standard fluxes
       procedure :: get_div_stress                         !< Compute divergence of stress for LPT solver
       procedure :: get_primitive                          !< Calculate primitive variables from conserved variables
+      procedure :: get_phys_visc                          !< Calculate physical dynamic viscosity
       procedure :: get_viscartif                          !< Calculate artifical bulk kinematic viscosity
       procedure :: get_vreman                             !< Get kinematic eddy viscosity using Vreman's model
       procedure :: get_velocity                           !< Calculate velocity from momentum
@@ -121,6 +125,14 @@ module spcomp_class
          real(WP), intent(in) :: RHO
          real(WP), intent(in) :: P
       end function Sfunc_type
+      !> viscosity model type
+      subroutine visc_type(mu,visc_cst,T)
+         import :: WP
+         implicit none
+         real(WP), intent(inout) :: mu       ! dynamic viscosity used in simulation
+         real(WP), intent(in)    :: visc_cst ! viscosity passed for sutherland law or constant model
+         real(WP), intent(in)    :: T        ! temperature for sutherlands model
+      end subroutine visc_type
    end interface
    
 contains
@@ -627,6 +639,17 @@ contains
       end if
    end subroutine interp_vel
    
+   !> Get physical dynamic viscosity
+   subroutine get_phys_visc(this,mu,visc_cst)
+      implicit none
+      class(spcomp), intent(inout) :: this
+      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(out) :: mu ! this is our physical viscosity array (passed as mu=this%dynviscG from shockdrop)
+      real(WP), intent(in) :: visc_cst                                                           ! this is the constant viscosity value that we pass (comes from our Re number calculation for the nondim setup)
+      integer :: i,j,k
+      do k=this%cfg%kmino_,this%cfg%kmaxo_; do j=this%cfg%jmino_,this%cfg%jmaxo_; do i=this%cfg%imino_,this%cfg%imaxo_
+         call this%visc_model(mu(i,j,k),visc_cst,this%T(i,j,k)) ! compute gas viscosity
+      end do; end do; end do
+   end subroutine get_phys_visc
    
    !> Get artifical bulk kinematic viscosity
    subroutine get_viscartif(this,dt,beta)
