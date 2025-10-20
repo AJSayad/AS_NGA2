@@ -489,8 +489,8 @@ contains
          ! Compute local Mach number
          sd%Ma=sqrt(sd%Ui**2+sd%Vi**2+sd%Wi**2)/sd%fs%C
          ! set initial viscosity
-         call sd%fs%get_phys_viscG(mu=sd%dynviscG,visc_cst=sd%cst_viscG)
-         call sd%fs%get_phys_viscL(mu=sd%dynviscL,visc_cst=sd%cst_viscL)
+         call sd%fs%get_viscG(mu=sd%dynviscG,visc_cst=sd%cst_viscG)
+         call sd%fs%get_viscL(mu=sd%dynviscL,visc_cst=sd%cst_viscL)
          ! Perform monitoring
          call sd%output_monitor()
       end block initialize_sd
@@ -544,7 +544,7 @@ contains
          ff%lp%Cp=GammaL*CvL !< Incorrect for stiffened gas...
          ff%lp%rho=rhoL      !< Should be variable...
          ! set our initial viscosity
-         call ff%fs%get_phys_visc(mu=ff%dynvisc,visc_cst=ff%cst_visc)
+         call ff%fs%get_visc(mu=ff%dynvisc,visc_cst=ff%cst_visc)
          ! Perform monitoring
          call ff%output_monitor()
       end block initialize_ff

@@ -361,7 +361,7 @@ contains
       integer :: i,j,k
       real(WP), parameter :: Cb2v=0.1_WP
       ! get physical viscosity
-      call this%fs%get_phys_visc(mu=this%dynvisc,visc_cst=this%cst_visc)
+      call this%fs%get_visc(mu=this%dynvisc,visc_cst=this%cst_visc)
       ! Get LAD
       call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta              )
       ! Get eddy viscosity

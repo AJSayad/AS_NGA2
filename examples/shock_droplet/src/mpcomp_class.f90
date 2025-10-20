@@ -141,8 +141,8 @@ module mpcomp_class
       procedure :: polygonize_interface                   !< Create polygonal representation of the interface
       procedure :: get_primitive                          !< Calculate phasic and mixture primitive variables from conserved variables
       procedure :: apply_relax                            !< Apply user-provided relaxation model in interfacial cells
-      procedure :: get_phys_viscG                         !< Calculate physical gas dynamic viscosity
-      procedure :: get_phys_viscL                         !< Calculate physical liquid dynamic viscosity
+      procedure :: get_viscG                              !< Calculate molecular gas dynamic viscosity
+      procedure :: get_viscL                              !< Calculate molecular liquid dynamic viscosity
       procedure :: get_viscartif                          !< Calculate artifical bulk kinematic viscosity
       procedure :: get_vreman                             !< Get kinematic eddy viscosity using Vreman's model
       procedure :: get_velocity                           !< Calculate velocity from momentum
@@ -1827,31 +1827,29 @@ contains
       end do; end do; end do
    end subroutine apply_relax
    
-   ! AS NOTE: do we want to combine the liquid and gas get_phys_visc into one subroutine with arguments for both liquid and gas or keep separate?
-
    !> Get gas physical dynamic viscosity
-   subroutine get_phys_viscG(this,mu,visc_cst)
+   subroutine get_viscG(this,mu,visc_cst)
       implicit none
       class(mpcomp), intent(inout) :: this
-      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(inout) :: mu ! this is our physical viscosity array (passed as mu=this%dynviscG from shockdrop)
-      real(WP), intent(in) :: visc_cst                                                           ! this is the constant viscosity value that we pass (comes from our Re number calculation for the nondim setup)
+      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(inout) :: mu ! this is our physical viscosity array 
+      real(WP), intent(in) :: visc_cst                                                             ! this is the constant viscosity value that we pass (comes from our Re number calculation for the nondim setup)
       integer :: i,j,k
       do k=this%cfg%kmino_,this%cfg%kmaxo_; do j=this%cfg%jmino_,this%cfg%jmaxo_; do i=this%cfg%imino_,this%cfg%imaxo_
          call this%visc_modelG(mu(i,j,k),visc_cst,this%TG(i,j,k)) ! compute gas viscosity
       end do; end do; end do
-   end subroutine get_phys_viscG
+   end subroutine get_viscG
 
    !> Get liquid physical dynamic viscosity
-   subroutine get_phys_viscL(this,mu,visc_cst)
+   subroutine get_viscL(this,mu,visc_cst)
       implicit none
       class(mpcomp), intent(inout) :: this
-      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(inout) :: mu ! this is our physical viscosity array (passed as mu=this%dynviscG from shockdrop)
-      real(WP), intent(in) :: visc_cst                                                           ! this is the constant viscosity value that we pass (comes from our Re number calculation for the nondim setup)
+      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(inout) :: mu ! this is our physical viscosity array
+      real(WP), intent(in) :: visc_cst                                                             ! this is the constant viscosity value that we pass (comes from our Re number calculation for the nondim setup)
       integer :: i,j,k
       do k=this%cfg%kmino_,this%cfg%kmaxo_; do j=this%cfg%jmino_,this%cfg%jmaxo_; do i=this%cfg%imino_,this%cfg%imaxo_
-         call this%visc_modelL(mu(i,j,k),visc_cst,this%TL(i,j,k)) 
+         call this%visc_modelL(mu(i,j,k),visc_cst,this%TL(i,j,k)) ! compute liquid viscosity
       end do; end do; end do
-   end subroutine get_phys_viscL
+   end subroutine get_viscL
    
    !> Get artifical bulk kinematic viscosity
    subroutine get_viscartif(this,dt,beta)

@@ -84,7 +84,7 @@ module spcomp_class
       procedure :: rhs                                    !< Compute rhs of our equations using standard fluxes
       procedure :: get_div_stress                         !< Compute divergence of stress for LPT solver
       procedure :: get_primitive                          !< Calculate primitive variables from conserved variables
-      procedure :: get_phys_visc                          !< Calculate physical dynamic viscosity
+      procedure :: get_visc                               !< Calculate molecular dynamic viscosity
       procedure :: get_viscartif                          !< Calculate artifical bulk kinematic viscosity
       procedure :: get_vreman                             !< Get kinematic eddy viscosity using Vreman's model
       procedure :: get_velocity                           !< Calculate velocity from momentum
@@ -640,16 +640,16 @@ contains
    end subroutine interp_vel
    
    !> Get physical dynamic viscosity
-   subroutine get_phys_visc(this,mu,visc_cst)
+   subroutine get_visc(this,mu,visc_cst)
       implicit none
       class(spcomp), intent(inout) :: this
-      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(out) :: mu ! this is our physical viscosity array (passed as mu=this%dynviscG from shockdrop)
+      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(out) :: mu ! this is our physical viscosity array
       real(WP), intent(in) :: visc_cst                                                           ! this is the constant viscosity value that we pass (comes from our Re number calculation for the nondim setup)
       integer :: i,j,k
       do k=this%cfg%kmino_,this%cfg%kmaxo_; do j=this%cfg%jmino_,this%cfg%jmaxo_; do i=this%cfg%imino_,this%cfg%imaxo_
          call this%visc_model(mu(i,j,k),visc_cst,this%T(i,j,k)) ! compute gas viscosity
       end do; end do; end do
-   end subroutine get_phys_visc
+   end subroutine get_visc
    
    !> Get artifical bulk kinematic viscosity
    subroutine get_viscartif(this,dt,beta)
