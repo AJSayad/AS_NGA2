@@ -909,9 +909,9 @@ contains
       ! Provide thermodynamic model
       sg%fs%getP=>get_PG; sg%fs%getC=>get_CG; sg%fs%getS=>get_SG; sg%fs%getT=>get_TG
       ! We need to transfer our viscosity explicitly...
-      sg%cst_visc=viscG
+      sg%fs%cst_visc=viscG
       ! choose our viscosity model
-      sg%visc_model=>cst_dyn_visc
+      sg%fs%visc_model=>cst_dyn_visc
       ! time info
       sg%time%dtmax = time%dtmax; sg%time%dt = time%dtmax; sg%time%cflmax = time%cflmax 
       sg%ens_evt%tper = ens_evt%tper    ! uncomment this line (and ensight lines in shockgen_class to save data files for sgen)
