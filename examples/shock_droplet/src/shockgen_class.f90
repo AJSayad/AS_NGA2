@@ -26,9 +26,6 @@ module shockgen_class
       type(spcomp) :: fs        !< Multiphase compressible solver
       type(timetracker) :: time !< Time info
 
-      !> viscosity model
-      procedure(visc_type), pointer, nopass :: visc_model=>NULL()
-
       !> viscosity
       real(WP) :: cst_visc
 
@@ -60,17 +57,6 @@ module shockgen_class
       procedure :: output_ensight                  !< Ensight output for shock-generator case
       procedure, private :: apply_bconds           !< Apply boundary conditions 
   end type shockgen
-
-   abstract interface 
-      !> viscosity model type
-      subroutine visc_type(mu,visc,T)
-         import :: WP
-         implicit none
-         real(WP), dimension(:,:,:), intent(inout) :: mu       ! dynamic viscosity array
-         real(WP), intent(in), optional :: visc                ! dynamic viscosity (for constant viscosity models)
-         real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature for sutherlands model
-      end subroutine visc_type
-   end interface
 
 contains
   !> initialization of shock generator simulation
@@ -236,7 +222,7 @@ contains
       call this%fs%get_primitive()
 
       ! Apply boundary conditions
-      call this%apply_bconds() ! --> we removed this since this is always a fully periodic case
+      call this%apply_bconds() 
 
       ! Interpolate velocity
       call this%fs%interp_vel(this%Ui,this%Vi,this%Wi)
@@ -253,7 +239,7 @@ contains
       class(shockgen), intent(inout) :: this
       real(WP), parameter :: Cb2v=0.1_WP
       ! get physical viscosity
-      call this%visc_model(mu=this%dynvisc,visc=this%cst_visc,T=this%fs%T)
+      call this%fs%get_visc(mu=this%dynvisc,visc_cst=this%cst_visc)
       ! Get LAD
       call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta              )
       ! Get eddy viscosity
