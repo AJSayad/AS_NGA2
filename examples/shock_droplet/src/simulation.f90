@@ -909,7 +909,7 @@ contains
       ! Provide thermodynamic model
       sg%fs%getP=>get_PG; sg%fs%getC=>get_CG; sg%fs%getS=>get_SG; sg%fs%getT=>get_TG
       ! We need to transfer our viscosity explicitly...
-      sg%fs%cst_visc=viscG
+      sg%cst_visc=viscG
       ! choose our viscosity model
       sg%fs%visc_model=>cst_dyn_visc
       ! time info
