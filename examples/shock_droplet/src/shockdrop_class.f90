@@ -26,10 +26,6 @@ module shockdrop_class
       type(mpcomp) :: fs        !< Multiphase compressible solver
       type(timetracker) :: time !< Time info
 
-      !> viscosity models
-      procedure(visc_type), pointer, nopass :: visc_modelG=>NULL()  
-      procedure(visc_type), pointer, nopass :: visc_modelL=>NULL() 
-      
       !> CCL for postprocessing
       type(cclabel) :: ccl
       
@@ -67,17 +63,6 @@ module shockdrop_class
       procedure :: finalize                        !< Finalize shock-drop simulation
    end type shockdrop
 
-   abstract interface 
-      !> viscosity model type
-      subroutine visc_type(mu,visc,T)
-         import :: WP
-         implicit none
-         real(WP), dimension(:,:,:), intent(inout) :: mu ! dynamic viscosity array
-         real(WP), intent(in) :: visc                    ! dynamic viscosity for nondim sutherland and for constant viscosity model
-         real(WP), dimension(:,:,:), intent(in)  :: T    ! temperature for sutherlands model
-      end subroutine visc_type
-   end interface
-   
 contains
    
    
@@ -559,8 +544,8 @@ contains
       real(WP), parameter :: Cb2v=0.1_WP
       integer :: i,j,k
       ! Get our physical viscosities
-      call this%visc_modelG(mu=this%dynviscG,visc=this%cst_viscG,T=this%fs%TG)
-      call this%visc_modelL(mu=this%dynviscL,visc=this%cst_viscL,T=this%fs%TL)
+      call this%fs%get_viscG(mu=this%dynviscG,visc_cst=this%cst_viscG)
+      call this%fs%get_viscL(mu=this%dynviscL,visc_cst=this%cst_viscL)
       ! Get LAD
       call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta)
       ! Get eddy viscosity
@@ -577,7 +562,6 @@ contains
          ! Harmonic average of BETA
          Lbeta=Lrho*this%beta(i,j,k); Gbeta=Grho*this%beta(i,j,k); this%fs%BETA(i,j,k)=(Lvof+Gvof)/(Lvof/max(Lbeta,eps)+Gvof/max(Gbeta,eps))
          ! Try adding BETA to visc
-         !this%fs%VISC(i,j,k)=this%fs%VISC(i,j,k)+this%fs%BETA(i,j,k)
          this%fs%VISC(i,j,k)=this%fs%VISC(i,j,k)+Cb2v*this%fs%BETA(i,j,k)
       end do; end do; end do
    end subroutine prepare_viscosities
