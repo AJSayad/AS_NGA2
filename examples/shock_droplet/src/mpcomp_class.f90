@@ -42,6 +42,10 @@ module mpcomp_class
       ! Pointer to subroutine for mixture cell relaxation
       procedure(relax_type), pointer, nopass :: relax=>NULL()
       
+      ! Pointer to subroutine for viscosity model
+      procedure(visc_type), pointer, nopass :: visc_modelG=>NULL()  
+      procedure(visc_type), pointer, nopass :: visc_modelL=>NULL() 
+      
       ! Volume moments, interface, and semi-Lagrangian fluxes
       real(WP), dimension(:,:,:)  , allocatable :: VF,VFold
       real(WP), dimension(:,:,:,:), allocatable :: BL,BLold
@@ -137,6 +141,8 @@ module mpcomp_class
       procedure :: polygonize_interface                   !< Create polygonal representation of the interface
       procedure :: get_primitive                          !< Calculate phasic and mixture primitive variables from conserved variables
       procedure :: apply_relax                            !< Apply user-provided relaxation model in interfacial cells
+      procedure :: get_viscG                              !< Calculate molecular gas dynamic viscosity
+      procedure :: get_viscL                              !< Calculate molecular liquid dynamic viscosity
       procedure :: get_viscartif                          !< Calculate artifical bulk kinematic viscosity
       procedure :: get_vreman                             !< Get kinematic eddy viscosity using Vreman's model
       procedure :: get_velocity                           !< Calculate velocity from momentum
@@ -186,6 +192,14 @@ module mpcomp_class
          real(WP),                intent(inout) :: VF
          real(WP), dimension(1:), intent(inout) :: Q
       end subroutine relax_type
+      !> viscosity model type
+      subroutine visc_type(mu,visc_cst,T)
+         import :: WP
+         implicit none
+         real(WP), intent(inout) :: mu       ! dynamic viscosity used in simulation
+         real(WP), intent(in)    :: visc_cst ! viscosity passed for sutherland law or constant model
+         real(WP), intent(in)    :: T        ! temperature for sutherlands model
+      end subroutine visc_type
    end interface
    
 contains
@@ -1813,6 +1827,29 @@ contains
       end do; end do; end do
    end subroutine apply_relax
    
+   !> Get gas physical dynamic viscosity
+   subroutine get_viscG(this,mu,visc_cst)
+      implicit none
+      class(mpcomp), intent(inout) :: this
+      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(inout) :: mu ! this is our physical viscosity array 
+      real(WP), intent(in) :: visc_cst                                                             ! this is the constant viscosity value that we pass (comes from our Re number calculation for the nondim setup)
+      integer :: i,j,k
+      do k=this%cfg%kmino_,this%cfg%kmaxo_; do j=this%cfg%jmino_,this%cfg%jmaxo_; do i=this%cfg%imino_,this%cfg%imaxo_
+         call this%visc_modelG(mu(i,j,k),visc_cst,this%TG(i,j,k)) ! compute gas viscosity
+      end do; end do; end do
+   end subroutine get_viscG
+
+   !> Get liquid physical dynamic viscosity
+   subroutine get_viscL(this,mu,visc_cst)
+      implicit none
+      class(mpcomp), intent(inout) :: this
+      real(WP), dimension(this%cfg%imino_:,this%cfg%jmino_:,this%cfg%kmino_:), intent(inout) :: mu ! this is our physical viscosity array
+      real(WP), intent(in) :: visc_cst                                                             ! this is the constant viscosity value that we pass (comes from our Re number calculation for the nondim setup)
+      integer :: i,j,k
+      do k=this%cfg%kmino_,this%cfg%kmaxo_; do j=this%cfg%jmino_,this%cfg%jmaxo_; do i=this%cfg%imino_,this%cfg%imaxo_
+         call this%visc_modelL(mu(i,j,k),visc_cst,this%TL(i,j,k)) ! compute liquid viscosity
+      end do; end do; end do
+   end subroutine get_viscL
    
    !> Get artifical bulk kinematic viscosity
    subroutine get_viscartif(this,dt,beta)

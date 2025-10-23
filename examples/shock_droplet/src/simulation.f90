@@ -271,33 +271,29 @@ contains
    end subroutine PT_relax
 
    !> constant dynamic viscosity model
-   subroutine cst_dyn_visc(mu,visc,T)
+   subroutine cst_dyn_visc(mu,visc_cst,T)
       implicit none
-      real(WP), dimension(:,:,:), intent(inout) :: mu       ! array to be populated 
-      real(WP), intent(in), optional :: visc                ! dynamic viscosity value
-      real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature array (not used here, only here for interface compatibility)
-      mu(:,:,:) = visc
+      real(WP), intent(inout) :: mu       ! array to be populated 
+      real(WP), intent(in)    :: visc_cst ! dynamic viscosity value 
+      real(WP), intent(in)    :: T        ! temperature (not used for constant viscosity model)
+      mu = visc_cst                       ! set constant viscosity
    end subroutine cst_dyn_visc
 
    !> sutherland model for viscosity
-   subroutine sutherland_air(mu,visc,T)
+   subroutine sutherland_air(mu,visc_cst,T)
       implicit none
-      integer :: i,j,k
-      real(WP), dimension(:,:,:), intent(inout) :: mu       ! array to be populated 
-      real(WP), intent(in), optional :: visc                ! dynamic viscosity value
-      real(WP), dimension(:,:,:), intent(in), optional :: T ! temperature array (only declared optional for interface compatibility)
-      real(WP), parameter :: mu0=1.716e-5_WP                ! [Pa*s] https://www.cfd-online.com/Wiki/Sutherland%27s_law 
-      real(WP), parameter :: T0=273.15_WP                   ! [K] reference temperature
-      real(WP), parameter :: S=110.4_WP  
+      real(WP), intent(inout) :: mu            ! viscosity array
+      real(WP), intent(in)    :: T             ! temperature array
+      real(WP), parameter :: mu0=1.716e-5_WP   ! [Pa*s] https://www.cfd-online.com/Wiki/Sutherland%27s_law 
+      real(WP), parameter :: T0=273.15_WP      ! [K] reference temperature
+      real(WP), parameter :: S=110.4_WP        ! [K] sutherland constant for air
+      real(WP), intent(in) :: visc_cst         ! reference nondim dynamic viscosity (from Re # calc)
+      real(WP) :: S_nondim                     ! non-dimensional sutherland constant
       if (dim_flag.eqv.(.false.))then ! nondimensional
-         do k=lbound(mu,3),ubound(mu,3); do j=lbound(mu,2),ubound(mu,2); do i=lbound(mu,1),ubound(mu,1)
-            ! coefficients come from normalizing each temperature term by T0 (T0/T0 + S/T0 = 1.4042, S/T0 = 0.4042) https://pubs.aip.org/aip/pof/article/36/5/055146/3294212/Comparison-of-high-order-numerical-methodologies
-            mu(i,j,k) = visc*(1.4042*(T(i,j,k))**1.5)/(T(i,j,k)+0.4042)
-         end do; end do; end do
+         S_nondim = S/T0 ! compute non-dimensional sutherland constant from (S*T0_nondim)/T0 where T0_nondim=1 due to our normalization
+         mu = visc_cst*(T**1.5)*((1.0_WP + S_nondim)/(T + S_nondim)) ! non dimensional sutherlands model
       else ! dimensional
-         do k=lbound(mu,3),ubound(mu,3); do j=lbound(mu,2),ubound(mu,2); do i=lbound(mu,1),ubound(mu,1)
-            mu(i,j,k) = mu0*((T(i,j,k)/T0)**1.5)*((T0 + S)/(T(i,j,k) + S))
-         end do; end do; end do
+         mu = mu0*((T/T0)**1.5)*((T0 + S)/(T + S))                   ! dimensional sutherlands model
       end if
    end subroutine sutherland_air
 
@@ -380,7 +376,7 @@ contains
             ! compute some non-dimensional parameters for log files
             rho_ratio  = rhoL/rho1                                         ! density ratio
             visc_ratio = viscL/viscG                                       ! viscosity ratio
-            ReG = rho1*u2*ddrop/viscG                                      ! ***Reynolds number based on pre-shock conditions***
+            ReG = rho1*u2*ddrop/viscG                                      ! ***Reynolds number based on pre shock density and post-shock velocity***
             c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)      ! sound speed ratio
             ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)                             ! liquid Mach number from SG EOS
             tc2 = (ddrop/u2)*sqrt(rhoL/rho2)                               ! characteristic time scale for logging
@@ -501,12 +497,9 @@ contains
          ! We need to transfer our viscosities explicitly...
          sd%cst_viscL=viscL; sd%cst_viscG=viscG
          ! set viscosity model for liquid and gas respectivley
-         sd%visc_modelL=>cst_dyn_visc
-         sd%visc_modelG=>cst_dyn_visc
-         !sd%visc_modelG=>sutherland_air
-         ! set initial viscosity
-         call sd%visc_modelL(mu=sd%dynviscL,visc=viscL,T=sd%fs%TL)
-         call sd%visc_modelG(mu=sd%dynviscG,visc=viscG,T=sd%fs%TG)
+         sd%fs%visc_modelL=>cst_dyn_visc
+         !sd%fs%visc_modelG=>cst_dyn_visc
+         sd%fs%visc_modelG=>sutherland_air
       end block setup_sd
 
       ! AS_SGEN: CLEAN THIS BLOCK UP
@@ -557,6 +550,9 @@ contains
          call sd%fs%interp_vel(sd%Ui,sd%Vi,sd%Wi)
          ! Compute local Mach number
          sd%Ma=sqrt(sd%Ui**2+sd%Vi**2+sd%Wi**2)/sd%fs%C
+         ! set initial viscosity
+         call sd%fs%get_viscG(mu=sd%dynviscG,visc_cst=sd%cst_viscG)
+         call sd%fs%get_viscL(mu=sd%dynviscL,visc_cst=sd%cst_viscL)
          ! Perform monitoring
          call sd%output_monitor()
       end block initialize_sd
@@ -651,10 +647,8 @@ contains
          ! We need to transfer our viscosity explicitly...
          ff%cst_visc=viscG
          ! set viscosity model
-         ff%visc_model=>cst_dyn_visc
-         !ff%visc_model=>sutherland_air
-         ! set our initial viscosities
-         call ff%visc_model(mu=ff%dynvisc,visc=viscG,T=ff%fs%T)
+         !ff%fs%visc_model=>cst_dyn_visc
+         ff%fs%visc_model=>sutherland_air
       end block setup_ff
       
       ! Generate initial conditions for far-field shock problem
@@ -681,6 +675,8 @@ contains
          ! Initialize lpt thermodynamic variables
          ff%lp%Cp=GammaL*CvL !< Incorrect for stiffened gas...
          ff%lp%rho=rhoL      !< Should be variable...
+         ! set our initial viscosity
+         call ff%fs%get_visc(mu=ff%dynvisc,visc_cst=ff%cst_visc)
          ! Perform monitoring
          call ff%output_monitor()
       end block initialize_ff
@@ -1025,8 +1021,8 @@ contains
          ! Inform sdnew's timetracker of our current time, but leave n unchanged to make remeshing obvious
          sdnew%time%t=time%t
          ! re set our viscosity model for new config
-         sdnew%visc_modelL=>sd%visc_modelL
-         sdnew%visc_modelG=>sd%visc_modelG
+         sdnew%fs%visc_modelL=>sd%fs%visc_modelL
+         sdnew%fs%visc_modelG=>sd%fs%visc_modelG
       end block setup_sdnew
       
       ! Create new couplers
