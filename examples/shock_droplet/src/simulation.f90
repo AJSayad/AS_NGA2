@@ -61,6 +61,7 @@ module simulation
    real(WP) :: rho_ratio,c_ratio
    real(WP) :: rhoL,ML
    real(WP) :: ReG,viscG,viscL,visc_ratio
+   real(WP), dimension(3) :: radii ! radii for the ellipsoid (if used)
    
 contains
    
@@ -294,6 +295,7 @@ contains
          use parallel, only: amRoot
          use param,    only: param_read
          character(str_long) :: message
+         call param_read('Radii', radii, default=[0.0_WP,0.0_WP,0.0_WP]) ! read in radii for ellipsoid, defaults to zero and uses a spheroid instead
          ! Set PinfG to zero
          PinfG=0.0_WP
          ! Read in Gammas
@@ -453,8 +455,13 @@ contains
             sd%fs%VF(i,j,k)=0.0_WP; sd%fs%BL(:,i,j,k)=[sd%fs%cfg%xm(i),sd%fs%cfg%ym(j),sd%fs%cfg%zm(k)]; sd%fs%BG(:,i,j,k)=[sd%fs%cfg%xm(i),sd%fs%cfg%ym(j),sd%fs%cfg%zm(k)]
             call setNumberOfPlanes(sd%fs%PLIC(i,j,k),1); call setPlane(sd%fs%PLIC(i,j,k),0,[0.0_WP,0.0_WP,0.0_WP],sign(1.0_WP,sd%fs%VF(i,j,k)-0.5_WP))
             ! Not set volume moments for a droplet or a slab
-            call initialize_volume_moments(lo=[sd%fs%cfg%x(i),sd%fs%cfg%y(j),sd%fs%cfg%z(k)],hi=[sd%fs%cfg%x(i+1),sd%fs%cfg%y(j+1),sd%fs%cfg%z(k+1)],&
-            levelset=levelset_drop,time=0.0_WP,level=5,VFlo=VFlo,VF=sd%fs%VF(i,j,k),BL=sd%fs%BL(:,i,j,k),BG=sd%fs%BG(:,i,j,k))
+            if (all(radii.gt.0.0_WP)) then ! check if we're using an ellipsoid
+               call initialize_volume_moments(lo=[sd%fs%cfg%x(i),sd%fs%cfg%y(j),sd%fs%cfg%z(k)],hi=[sd%fs%cfg%x(i+1),sd%fs%cfg%y(j+1),sd%fs%cfg%z(k+1)],&
+               levelset=levelset_ellipsoid,time=0.0_WP,level=5,VFlo=VFlo,VF=sd%fs%VF(i,j,k),BL=sd%fs%BL(:,i,j,k),BG=sd%fs%BG(:,i,j,k))
+            else
+               call initialize_volume_moments(lo=[sd%fs%cfg%x(i),sd%fs%cfg%y(j),sd%fs%cfg%z(k)],hi=[sd%fs%cfg%x(i+1),sd%fs%cfg%y(j+1),sd%fs%cfg%z(k+1)],&
+               levelset=levelset_drop,time=0.0_WP,level=5,VFlo=VFlo,VF=sd%fs%VF(i,j,k),BL=sd%fs%BL(:,i,j,k),BG=sd%fs%BG(:,i,j,k))
+            end if
             ! Initialize mixture velocity to normal shock
             sd%fs%U(i,j,k)=u2*Hshock(Xs-sd%fs%cfg%x(i),delta=0.5_WP*sd%fs%dx)
             sd%fs%V(i,j,k)=0.0_WP
@@ -630,6 +637,18 @@ contains
          ! Level set function for a sphere with radius 0.5 and perturbation
          G=0.5_WP+perturb-r
       end function levelset_drop
+
+      !> Level set function for an ellipsoid
+      function levelset_ellipsoid(xyz,t) result(G)
+         use mathtools, only: spherical_harmonic
+         implicit none
+         real(WP), dimension(3),intent(in) :: xyz
+         real(WP), intent(in) :: t
+         real(WP) :: G,r,theta,phi,perturb
+         integer :: i
+         ! level set for an ellipsoid
+         G=1.0_WP-sqrt(((xyz(1))/radii(1))**2+((xyz(2))/radii(2))**2+((xyz(3))/radii(3))**2)
+      end function levelset_ellipsoid
    end subroutine simulation_init
    
    
