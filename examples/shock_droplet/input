@@ -16,6 +16,9 @@ Shock location :   -0.6
 Gas Reynolds number : 1e5
 Viscosity ratio :     58.3 ! set this to zero for nondimensional invisicd case
 
+# For running ellipsoid case, be careful of shock placement and domain size with an ellipsoid case!!! (comment out for spheroid)
+Radii: 0.6321 0.5 0.6321 # diameters 1.2642 1.0 1.2642 AR = 1.2642 ==> average of front lit experiments aspect ratios (computed to conserve drop mass with spherical drop)
+
 # dimensional flow parameters (for dimensional runs only)
 # Liquid
 Drop diameter:  1.0
