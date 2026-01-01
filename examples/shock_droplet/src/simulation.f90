@@ -61,6 +61,9 @@ module simulation
    real(WP) :: rho_ratio,c_ratio
    real(WP) :: rhoL,ML
    real(WP) :: ReG,viscG,viscL,visc_ratio
+   real(WP) :: tc                                ! characteristic time scale for logging
+   real(WP) :: texp                              ! exposure time window for burst output
+   real(WP) :: tau_A, tau_B, tau_C, tau_D, tau_E ! burst tau values
    
 contains
    
@@ -324,6 +327,10 @@ contains
          ! Viscous parameters
          call param_read('Gas Reynolds number',ReG); viscG=rho1*1.0_WP*u2/ReG 
          call param_read('Viscosity ratio',visc_ratio); viscL=visc_ratio*viscG
+         tc = (1.0_WP/u2)*sqrt(rhoL/rho2) !tc = (ddrop/u2)*sqrt(rhoL/rho2) ! characteristic time scale for logging
+         ! read in exposure time window and burst tau values
+         call param_read('Exposure time',texp)
+         call param_read('Burst tau A',tau_A);call param_read('Burst tau B',tau_B);call param_read('Burst tau C',tau_C);call param_read('Burst tau D',tau_D);call param_read('Burst tau E',tau_E)
          ! Output case info
          if (amRoot) then
             write(message,'("[Liquid EOS] => Gamma=",es12.5)') GammaL; call log(message)
@@ -347,6 +354,13 @@ contains
             write(message,'("[Viscosity ratio]  => muL/muG=",es12.5)') visc_ratio; call log(message)
             write(message,'("[Gas    viscosity] =>     muG=",es12.5)')      viscG; call log(message)
             write(message,'("[Liquid viscosity] =>     muL=",es12.5)')      viscL; call log(message)
+            write(message,'("[Characteristic Time Scale] => tc=",es12.5)')     tc; call log(message)
+            write(message,'("[Exposure time] => texp=",es12.5)')               texp; call log(message)
+            write(message,'("[Burst tau A] => tau_A=",F5.2)')             tau_A; call log(message)
+            write(message,'("[Burst tau B] => tau_B=",F5.2)')             tau_B; call log(message)
+            write(message,'("[Burst tau C] => tau_C=",F5.2)')             tau_C; call log(message)
+            write(message,'("[Burst tau D] => tau_D=",F5.2)')             tau_D; call log(message)
+            write(message,'("[Burst tau E] => tau_E=",F5.2)')             tau_E; call log(message)
          end if
       end block initialize_parameters
       
