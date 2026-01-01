@@ -61,9 +61,11 @@ module simulation
    real(WP) :: rho_ratio,c_ratio
    real(WP) :: rhoL,ML
    real(WP) :: ReG,viscG,viscL,visc_ratio
-   real(WP) :: tc                                ! characteristic time scale for logging
-   real(WP) :: texp                              ! exposure time window for burst output
-   real(WP) :: tau_A, tau_B, tau_C, tau_D, tau_E ! burst tau values
+   real(WP) :: tc                                                                    ! characteristic time scale for logging
+   !> burst parameters
+   real(WP) :: texp                                                                  ! exposure time window for burst output
+   real(WP) :: tau_A, tau_B, tau_C, tau_D, tau_E                                     ! burst tau values
+   real(WP) :: time_A1,time_A2,time_B1,time_B2,time_C1,time_C2,time_D1,time_D2,time_E1,time_E2 ! lower (A1,B1,C1,D1,E1) and upper (A2,B2,C2,D2,E2) time bounds for burst output
    
 contains
    
@@ -330,7 +332,12 @@ contains
          tc = (1.0_WP/u2)*sqrt(rhoL/rho2) !tc = (ddrop/u2)*sqrt(rhoL/rho2) ! characteristic time scale for logging
          ! read in exposure time window and burst tau values
          call param_read('Exposure time',texp)
-         call param_read('Burst tau A',tau_A);call param_read('Burst tau B',tau_B);call param_read('Burst tau C',tau_C);call param_read('Burst tau D',tau_D);call param_read('Burst tau E',tau_E)
+         ! compute upper and lower time bounds for burst output (this is done here to avoid this computation at each timestep)
+         call param_read('Burst tau A',tau_A); time_A1 = tau_A*tc - 0.5_WP*texp; time_A2 = tau_A*tc + 0.5_WP*texp
+         call param_read('Burst tau B',tau_B); time_B1 = tau_B*tc - 0.5_WP*texp; time_B2 = tau_B*tc + 0.5_WP*texp
+         call param_read('Burst tau C',tau_C); time_C1 = tau_C*tc - 0.5_WP*texp; time_C2 = tau_C*tc + 0.5_WP*texp
+         call param_read('Burst tau D',tau_D); time_D1 = tau_D*tc - 0.5_WP*texp; time_D2 = tau_D*tc + 0.5_WP*texp
+         call param_read('Burst tau E',tau_E); time_E1 = tau_E*tc - 0.5_WP*texp; time_E2 = tau_E*tc + 0.5_WP*texp
          ! Output case info
          if (amRoot) then
             write(message,'("[Liquid EOS] => Gamma=",es12.5)') GammaL; call log(message)
@@ -692,6 +699,27 @@ contains
          if (ens_evt%occurs()) then
             call sd%output_ensight(t=time%t)
             call ff%output_ensight(t=time%t)
+         end if
+         
+         ! burst for tau_A
+         if (time%t.ge.time_A1 .and. time%t.le.time_A2) then
+            print*, "Place holder for burst output A"
+         end if
+         ! burst for tau_B
+         if (time%t.ge.time_B1 .and. time%t.le.time_B2) then
+            print*, "Place holder for burst output B"
+         end if
+         ! burst for tau_C
+         if (time%t.ge.time_C1 .and. time%t.le.time_C2) then
+            print*, "Place holder for burst output C"
+         end if
+         ! burst for tau_D
+         if (time%t.ge.time_D1 .and. time%t.le.time_D2) then
+            print*, "Place holder for burst output D"
+         end if
+         ! burst for tau_E 
+         if (time%t.ge.time_E1 .and. time%t.le.time_E2) then
+            print*, "Place holder for burst output E"
          end if
          
          ! Droplet analysis
