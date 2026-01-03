@@ -703,23 +703,29 @@ contains
          
          ! burst for tau_A
          if (time%t.ge.time_A1 .and. time%t.le.time_A2) then
-            print*, "Place holder for burst output A"
+            call sd%output_tau_A(t=time%t)
+            call ff%output_tau_A(t=time%t)
          end if
          ! burst for tau_B
          if (time%t.ge.time_B1 .and. time%t.le.time_B2) then
-            print*, "Place holder for burst output B"
+            call sd%output_tau_B(t=time%t)
+            call ff%output_tau_B(t=time%t)
          end if
          ! burst for tau_C
          if (time%t.ge.time_C1 .and. time%t.le.time_C2) then
-            print*, "Place holder for burst output C"
+            call sd%output_tau_C(t=time%t)
+            call ff%output_tau_C(t=time%t)
          end if
          ! burst for tau_D
          if (time%t.ge.time_D1 .and. time%t.le.time_D2) then
             print*, "Place holder for burst output D"
+            call sd%output_tau_D(t=time%t)
+            call ff%output_tau_D(t=time%t)
          end if
          ! burst for tau_E 
          if (time%t.ge.time_E1 .and. time%t.le.time_E2) then
-            print*, "Place holder for burst output E"
+            call sd%output_tau_E(t=time%t)
+            call ff%output_tau_E(t=time%t)
          end if
          
          ! Droplet analysis
