@@ -32,6 +32,12 @@ module ffshock_class
       !> Ensight postprocessing
       type(ensight)  :: ens_out
       type(partmesh) :: pmesh
+      !> Ensight burst events
+      type(ensight)  :: tau_A
+      type(ensight)  :: tau_B
+      type(ensight)  :: tau_C
+      type(ensight)  :: tau_D
+      type(ensight)  :: tau_E
       
       !> Simulation monitor file
       type(monitor) :: mfile,cflfile,consfile,lptfile
@@ -54,6 +60,11 @@ module ffshock_class
       procedure :: step                            !< Advance farfield shock simulation by one time step
       procedure :: output_monitor                  !< Monitoring for farfield shock case
       procedure :: output_ensight                  !< Ensight output for farfield shock case
+      procedure :: output_tau_A                    !< Ensight output for particles
+      procedure :: output_tau_B                    !< Ensight output for particles
+      procedure :: output_tau_C                    !< Ensight output for particles
+      procedure :: output_tau_D                    !< Ensight output for particles
+      procedure :: output_tau_E                    !< Ensight output for particles
       procedure, private :: prepare_viscosities    !< Prepare viscosities
       procedure, private :: apply_bconds           !< Apply boundary conditions
    end type ffshock
@@ -158,6 +169,24 @@ contains
          call this%ens_out%add_scalar('total_visc',this%fs%visc) ! total viscosity (physical + LES + LAD)
          ! Add lpt output
          call this%ens_out%add_particle('spray',this%pmesh)
+         ! create ensight outputs for burst events
+         this%tau_A=ensight(cfg=this%cfg,name='tau_A_farfield')
+         this%tau_B=ensight(cfg=this%cfg,name='tau_B_farfield')
+         this%tau_C=ensight(cfg=this%cfg,name='tau_C_farfield')
+         this%tau_D=ensight(cfg=this%cfg,name='tau_D_farfield')
+         this%tau_E=ensight(cfg=this%cfg,name='tau_E_farfield')
+         ! No need to output FVF file
+         this%tau_A%write_fvf=.false.
+         this%tau_B%write_fvf=.false.
+         this%tau_C%write_fvf=.false.
+         this%tau_D%write_fvf=.false.
+         this%tau_E%write_fvf=.false.
+         ! Add lpt output
+         call this%tau_A%add_particle('spray',this%pmesh)
+         call this%tau_B%add_particle('spray',this%pmesh)
+         call this%tau_C%add_particle('spray',this%pmesh)
+         call this%tau_D%add_particle('spray',this%pmesh)
+         call this%tau_E%add_particle('spray',this%pmesh)
       end block create_ensight
       
       ! Create monitor files
@@ -353,6 +382,110 @@ contains
       end if
    end subroutine output_ensight
    
+   !> Output ensight files for burst event
+   subroutine output_tau_A(this,t)
+      implicit none
+      class(ffshock), intent(inout) :: this
+      real(WP), intent(in), optional :: t
+      integer :: n
+      ! Update pmesh
+      call this%lp%update_partmesh(this%pmesh)
+      do n=1,this%lp%np_
+         this%pmesh%var  (1,n)=this%lp%p(n)%d*0.5_WP
+         this%pmesh%var  (2,n)=this%lp%p(n)%T
+         this%pmesh%vec(:,1,n)=this%lp%p(n)%vel
+      end do
+      ! Output to ensight
+      if (present(t)) then
+         call this%tau_A%write_data(t)
+      else
+         call this%tau_A%write_data(this%time%t)
+      end if
+   end subroutine output_tau_A
+
+   !> Output ensight files for burst event
+   subroutine output_tau_B(this,t)
+      implicit none
+      class(ffshock), intent(inout) :: this
+      real(WP), intent(in), optional :: t
+      integer :: n
+      ! Update pmesh
+      call this%lp%update_partmesh(this%pmesh)
+      do n=1,this%lp%np_
+         this%pmesh%var  (1,n)=this%lp%p(n)%d*0.5_WP
+         this%pmesh%var  (2,n)=this%lp%p(n)%T
+         this%pmesh%vec(:,1,n)=this%lp%p(n)%vel
+      end do
+      ! Output to ensight
+      if (present(t)) then
+         call this%tau_B%write_data(t)
+      else
+         call this%tau_B%write_data(this%time%t)
+      end if
+   end subroutine output_tau_B
+
+   !> Output ensight files for burst event
+   subroutine output_tau_C(this,t)
+      implicit none
+      class(ffshock), intent(inout) :: this
+      real(WP), intent(in), optional :: t
+      integer :: n
+      ! Update pmesh
+      call this%lp%update_partmesh(this%pmesh)
+      do n=1,this%lp%np_
+         this%pmesh%var  (1,n)=this%lp%p(n)%d*0.5_WP
+         this%pmesh%var  (2,n)=this%lp%p(n)%T
+         this%pmesh%vec(:,1,n)=this%lp%p(n)%vel
+      end do
+      ! Output to ensight
+      if (present(t)) then
+         call this%tau_C%write_data(t)
+      else
+         call this%tau_C%write_data(this%time%t)
+      end if
+   end subroutine output_tau_C
+
+   !> Output ensight files for burst event
+   subroutine output_tau_D(this,t)
+      implicit none
+      class(ffshock), intent(inout) :: this
+      real(WP), intent(in), optional :: t
+      integer :: n
+      ! Update pmesh
+      call this%lp%update_partmesh(this%pmesh)
+      do n=1,this%lp%np_
+         this%pmesh%var  (1,n)=this%lp%p(n)%d*0.5_WP
+         this%pmesh%var  (2,n)=this%lp%p(n)%T
+         this%pmesh%vec(:,1,n)=this%lp%p(n)%vel
+      end do
+      ! Output to ensight
+      if (present(t)) then
+         call this%tau_D%write_data(t)
+      else
+         call this%tau_D%write_data(this%time%t)
+      end if
+   end subroutine output_tau_D
+
+   !> Output ensight files for burst event
+   subroutine output_tau_E(this,t)
+      implicit none
+      class(ffshock), intent(inout) :: this
+      real(WP), intent(in), optional :: t
+      integer :: n
+      ! Update pmesh
+      call this%lp%update_partmesh(this%pmesh)
+      do n=1,this%lp%np_
+         this%pmesh%var  (1,n)=this%lp%p(n)%d*0.5_WP
+         this%pmesh%var  (2,n)=this%lp%p(n)%T
+         this%pmesh%vec(:,1,n)=this%lp%p(n)%vel
+      end do
+      ! Output to ensight
+      if (present(t)) then
+         call this%tau_E%write_data(t)
+      else
+         call this%tau_E%write_data(this%time%t)
+      end if
+   end subroutine output_tau_E
    
    !> Calculate viscosities
    subroutine prepare_viscosities(this)

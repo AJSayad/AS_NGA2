@@ -67,12 +67,15 @@ module simulation
    real(WP) :: rho_ratio,c_ratio
    real(WP) :: rhoL,ML
    real(WP) :: ReG,viscG,viscL,visc_ratio
-   real(WP) :: tc                  ! characteristic time scale for logging
    real(WP), dimension(3) :: radii ! radii for the ellipsoid (if used)
    !> dimensional case
    logical, public :: dim_flag     ! true for running a dimensional case
    real(WP) :: ddrop               ! drop diameter
-
+   real(WP) :: tc                  ! characteristic time scale for logging
+   !> burst parameters
+   real(WP) :: texp                              ! exposure time window for burst output
+   real(WP) :: tau_A, tau_B, tau_C, tau_D, tau_E ! burst tau values
+   real(WP) :: time_A1,time_A2,time_B1,time_B2,time_C1,time_C2,time_D1,time_D2,time_E1,time_E2 ! lower (A1,B1,C1,D1,E1) av
 contains
    
    
@@ -355,7 +358,6 @@ contains
             else
                viscL=visc_ratio*viscG
             end if
-            tc = (ddrop/u2)*sqrt(rhoL/rho2) ! characteristic time scale for logging
          else ! run dimensional case
             call param_read('Liquid Pinf',PinfL)
             call param_read('Liquid density',rhoL)
@@ -382,8 +384,16 @@ contains
             ReG = rho1*u2*ddrop/viscG                                      ! ***Reynolds number based on pre shock density and post-shock velocity***
             c_ratio=sqrt(GammaL*(p1+PinfL)/rhoL)/sqrt(GammaG*p1/rho1)      ! sound speed ratio
             ML=u2/sqrt(GammaL*(p1+PinfL)/rhoL)                             ! liquid Mach number from SG EOS
-            tc = (ddrop/u2)*sqrt(rhoL/rho2)                               ! characteristic time scale for logging
          end if ! dimensional flag
+         tc = (ddrop/u2)*sqrt(rhoL/rho2)                               ! characteristic time scale for logging
+         ! read in exposure time window and burst tau values
+         call param_read('Exposure time',texp)
+         ! compute upper and lower time bounds for burst output (this is done here to avoid this computation at each timestep)
+         call param_read('Burst tau A',tau_A); time_A1 = tau_A*tc - 0.5_WP*texp; time_A2 = tau_A*tc + 0.5_WP*texp
+         call param_read('Burst tau B',tau_B); time_B1 = tau_B*tc - 0.5_WP*texp; time_B2 = tau_B*tc + 0.5_WP*texp
+         call param_read('Burst tau C',tau_C); time_C1 = tau_C*tc - 0.5_WP*texp; time_C2 = tau_C*tc + 0.5_WP*texp
+         call param_read('Burst tau D',tau_D); time_D1 = tau_D*tc - 0.5_WP*texp; time_D2 = tau_D*tc + 0.5_WP*texp
+         call param_read('Burst tau E',tau_E); time_E1 = tau_E*tc - 0.5_WP*texp; time_E2 = tau_E*tc + 0.5_WP*texp
          ! Output case info
          if (amRoot) then
             write(message,'("Shock generator  => ",L1)'    ) sgenflag; call log(message)
@@ -410,6 +420,12 @@ contains
             write(message,'("[Gas    viscosity] =>     muG=",es12.5)')      viscG; call log(message)
             write(message,'("[Liquid viscosity] =>     muL=",es12.5)')      viscL; call log(message)
             write(message,'("[Characteristic Time Scale] => tc=",es12.5)')     tc; call log(message)
+            write(message,'("[Exposure time] => texp=",es12.5)')               texp; call log(message)
+            write(message,'("[Burst tau A] => tau_A=",F5.2)')             tau_A; call log(message)
+            write(message,'("[Burst tau B] => tau_B=",F5.2)')             tau_B; call log(message)
+            write(message,'("[Burst tau C] => tau_C=",F5.2)')             tau_C; call log(message)
+            write(message,'("[Burst tau D] => tau_D=",F5.2)')             tau_D; call log(message)
+            write(message,'("[Burst tau E] => tau_E=",F5.2)')             tau_E; call log(message)
          end if
       end block initialize_parameters
       
@@ -892,6 +908,32 @@ contains
          if (ens_evt%occurs()) then
             call sd%output_ensight(t=time%t)
             call ff%output_ensight(t=time%t)
+         end if
+         
+         ! burst for tau_A
+         if (time%t.ge.time_A1 .and. time%t.le.time_A2) then
+            call sd%output_tau_A(t=time%t)
+            call ff%output_tau_A(t=time%t)
+         end if
+         ! burst for tau_B
+         if (time%t.ge.time_B1 .and. time%t.le.time_B2) then
+            call sd%output_tau_B(t=time%t)
+            call ff%output_tau_B(t=time%t)
+         end if
+         ! burst for tau_C
+         if (time%t.ge.time_C1 .and. time%t.le.time_C2) then
+            call sd%output_tau_C(t=time%t)
+            call ff%output_tau_C(t=time%t)
+         end if
+         ! burst for tau_D
+         if (time%t.ge.time_D1 .and. time%t.le.time_D2) then
+            call sd%output_tau_D(t=time%t)
+            call ff%output_tau_D(t=time%t)
+         end if
+         ! burst for tau_E 
+         if (time%t.ge.time_E1 .and. time%t.le.time_E2) then
+            call sd%output_tau_E(t=time%t)
+            call ff%output_tau_E(t=time%t)
          end if
          
          ! Droplet analysis

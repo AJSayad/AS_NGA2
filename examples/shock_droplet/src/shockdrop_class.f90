@@ -32,6 +32,12 @@ module shockdrop_class
       !> Ensight postprocessing
       type(surfmesh) :: smesh
       type(ensight)  :: ens_out
+      !> Burst events
+      type(ensight)  :: tau_A
+      type(ensight)  :: tau_B
+      type(ensight)  :: tau_C
+      type(ensight)  :: tau_D
+      type(ensight)  :: tau_E
       
       !> Simulation monitor file
       type(monitor) :: mfile,cflfile,consfile,dropfile,meshfile
@@ -58,6 +64,11 @@ module shockdrop_class
       procedure :: analyze_drops                   !< Output droplet analysis
       procedure :: output_monitor                  !< Monitoring for shock-drop case
       procedure :: output_ensight                  !< Ensight output for shock-drop case
+      procedure :: output_tau_A                    !< Ensight output for shock-drop case
+      procedure :: output_tau_B                    !< Ensight output for shock-drop case
+      procedure :: output_tau_C                    !< Ensight output for shock-drop case
+      procedure :: output_tau_D                    !< Ensight output for shock-drop case
+      procedure :: output_tau_E                    !< Ensight output for shock-drop case
       procedure, private :: prepare_viscosities    !< Prepare viscosities
       procedure :: apply_bconds                    !< Apply boundary conditions
       procedure :: finalize                        !< Finalize shock-drop simulation
@@ -302,6 +313,24 @@ contains
          this%smesh=surfmesh(nvar=1,name='plic')
          this%smesh%varname(1)='label'
          call this%ens_out%add_surface('plic',this%smesh)
+         ! Create ensight output for burst events
+         this%tau_A=ensight(cfg=this%cfg,name='Tau_A',time_dependent_geometry=.true.)
+         this%tau_B=ensight(cfg=this%cfg,name='Tau_B',time_dependent_geometry=.true.)
+         this%tau_C=ensight(cfg=this%cfg,name='Tau_C',time_dependent_geometry=.true.)
+         this%tau_D=ensight(cfg=this%cfg,name='Tau_D',time_dependent_geometry=.true.)
+         this%tau_E=ensight(cfg=this%cfg,name='Tau_E',time_dependent_geometry=.true.)
+         ! No need to output FVF file
+         this%tau_A%write_fvf=.false.
+         this%tau_B%write_fvf=.false.
+         this%tau_C%write_fvf=.false.
+         this%tau_D%write_fvf=.false.
+         this%tau_E%write_fvf=.false.
+         ! Get plic outputs
+         call this%tau_A%add_surface('plic',this%smesh)
+         call this%tau_B%add_surface('plic',this%smesh)
+         call this%tau_C%add_surface('plic',this%smesh)
+         call this%tau_D%add_surface('plic',this%smesh)
+         call this%tau_E%add_surface('plic',this%smesh)
       end block create_ensight
       
       ! Create monitor files
@@ -533,6 +562,146 @@ contains
          call this%ens_out%write_data(this%time%t)
       end if
    end subroutine output_ensight
+   
+   !> Output ensight files for burst event
+   subroutine output_tau_A(this,t)
+      use irl_fortran_interface, only: getNumberOfVertices
+      implicit none
+      class(shockdrop), intent(inout) :: this
+      real(WP), intent(in), optional :: t
+      integer :: i,j,k,np
+      ! Update surface mesh
+      call this%fs%update_surfmesh(this%smesh)
+      ! Update label field
+      np=0
+      do k=this%fs%cfg%kmin_,this%fs%cfg%kmax_
+         do j=this%fs%cfg%jmin_,this%fs%cfg%jmax_
+            do i=this%fs%cfg%imin_,this%fs%cfg%imax_
+               if (getNumberOfVertices(this%fs%interface_polygon(i,j,k)).gt.0) then
+                  np=np+1; this%smesh%var(1,np)=real(this%ccl%id(i,j,k),WP)
+               end if
+            end do
+         end do
+      end do
+      ! Output to ensight
+      if (present(t)) then
+         call this%tau_A%write_data(t)
+      else
+         call this%tau_A%write_data(this%time%t)
+      end if
+   end subroutine output_tau_A
+
+   !> Output ensight files for burst event
+   subroutine output_tau_B(this,t)
+      use irl_fortran_interface, only: getNumberOfVertices
+      implicit none
+      class(shockdrop), intent(inout) :: this
+      real(WP), intent(in), optional :: t
+      integer :: i,j,k,np
+      ! Update surface mesh
+      call this%fs%update_surfmesh(this%smesh)
+      ! Update label field
+      np=0
+      do k=this%fs%cfg%kmin_,this%fs%cfg%kmax_
+         do j=this%fs%cfg%jmin_,this%fs%cfg%jmax_
+            do i=this%fs%cfg%imin_,this%fs%cfg%imax_
+               if (getNumberOfVertices(this%fs%interface_polygon(i,j,k)).gt.0) then
+                  np=np+1; this%smesh%var(1,np)=real(this%ccl%id(i,j,k),WP)
+               end if
+            end do
+         end do
+      end do
+      ! Output to ensight
+      if (present(t)) then
+         call this%tau_B%write_data(t)
+      else
+         call this%tau_B%write_data(this%time%t)
+      end if
+   end subroutine output_tau_B
+
+   !> Output ensight files for burst event
+   subroutine output_tau_C(this,t)
+      use irl_fortran_interface, only: getNumberOfVertices
+      implicit none
+      class(shockdrop), intent(inout) :: this
+      real(WP), intent(in), optional :: t
+      integer :: i,j,k,np
+      ! Update surface mesh
+      call this%fs%update_surfmesh(this%smesh)
+      ! Update label field
+      np=0
+      do k=this%fs%cfg%kmin_,this%fs%cfg%kmax_
+         do j=this%fs%cfg%jmin_,this%fs%cfg%jmax_
+            do i=this%fs%cfg%imin_,this%fs%cfg%imax_
+               if (getNumberOfVertices(this%fs%interface_polygon(i,j,k)).gt.0) then
+                  np=np+1; this%smesh%var(1,np)=real(this%ccl%id(i,j,k),WP)
+               end if
+            end do
+         end do
+      end do
+      ! Output to ensight
+      if (present(t)) then
+         call this%tau_C%write_data(t)
+      else
+         call this%tau_C%write_data(this%time%t)
+      end if
+   end subroutine output_tau_C
+
+   !> Output ensight files for burst event
+   subroutine output_tau_D(this,t)
+      use irl_fortran_interface, only: getNumberOfVertices
+      implicit none
+      class(shockdrop), intent(inout) :: this
+      real(WP), intent(in), optional :: t
+      integer :: i,j,k,np
+      ! Update surface mesh
+      call this%fs%update_surfmesh(this%smesh)
+      ! Update label field
+      np=0
+      do k=this%fs%cfg%kmin_,this%fs%cfg%kmax_
+         do j=this%fs%cfg%jmin_,this%fs%cfg%jmax_
+            do i=this%fs%cfg%imin_,this%fs%cfg%imax_
+               if (getNumberOfVertices(this%fs%interface_polygon(i,j,k)).gt.0) then
+                  np=np+1; this%smesh%var(1,np)=real(this%ccl%id(i,j,k),WP)
+               end if
+            end do
+         end do
+      end do
+      ! Output to ensight
+      if (present(t)) then
+         call this%tau_D%write_data(t)
+      else
+         call this%tau_D%write_data(this%time%t)
+      end if
+   end subroutine output_tau_D
+
+   !> Output ensight files for burst event
+   subroutine output_tau_E(this,t)
+      use irl_fortran_interface, only: getNumberOfVertices
+      implicit none
+      class(shockdrop), intent(inout) :: this
+      real(WP), intent(in), optional :: t
+      integer :: i,j,k,np
+      ! Update surface mesh
+      call this%fs%update_surfmesh(this%smesh)
+      ! Update label field
+      np=0
+      do k=this%fs%cfg%kmin_,this%fs%cfg%kmax_
+         do j=this%fs%cfg%jmin_,this%fs%cfg%jmax_
+            do i=this%fs%cfg%imin_,this%fs%cfg%imax_
+               if (getNumberOfVertices(this%fs%interface_polygon(i,j,k)).gt.0) then
+                  np=np+1; this%smesh%var(1,np)=real(this%ccl%id(i,j,k),WP)
+               end if
+            end do
+         end do
+      end do
+      ! Output to ensight
+      if (present(t)) then
+         call this%tau_E%write_data(t)
+      else
+         call this%tau_E%write_data(this%time%t)
+      end if
+   end subroutine output_tau_E
    
    !> Calculate viscosities
    subroutine prepare_viscosities(this)
