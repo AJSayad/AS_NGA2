@@ -44,10 +44,10 @@ Drop analysis period  : 0.1
 Exposure time : 0.08144 # nondim scaled exposure time for physical 110ns
 # tau events for burst output (tau value for burst)
 Burst tau A : 0.25
-Burst tau B : 1.0
-Burst tau C : 1.5
-Burst tau D : 2.0
-Burst tau E : 2.5
+Burst tau B : 0.5
+Burst tau C : 1.0
+Burst tau D : 1.5
+Burst tau E : 2.0
 
 # Shock-drop simulation
 !- Parallelization ----
