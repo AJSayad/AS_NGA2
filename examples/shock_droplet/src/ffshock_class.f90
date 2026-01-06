@@ -170,11 +170,11 @@ contains
          ! Add lpt output
          call this%ens_out%add_particle('spray',this%pmesh)
          ! create ensight outputs for burst events
-         this%tau_A=ensight(cfg=this%cfg,name='tau_A_farfield')
-         this%tau_B=ensight(cfg=this%cfg,name='tau_B_farfield')
-         this%tau_C=ensight(cfg=this%cfg,name='tau_C_farfield')
-         this%tau_D=ensight(cfg=this%cfg,name='tau_D_farfield')
-         this%tau_E=ensight(cfg=this%cfg,name='tau_E_farfield')
+         this%tau_A=ensight(cfg=this%cfg,name='Tau_A_farfield')
+         this%tau_B=ensight(cfg=this%cfg,name='Tau_B_farfield')
+         this%tau_C=ensight(cfg=this%cfg,name='Tau_C_farfield')
+         this%tau_D=ensight(cfg=this%cfg,name='Tau_D_farfield')
+         this%tau_E=ensight(cfg=this%cfg,name='Tau_E_farfield')
          ! No need to output FVF file
          this%tau_A%write_fvf=.false.
          this%tau_B%write_fvf=.false.
