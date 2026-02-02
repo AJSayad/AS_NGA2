@@ -1,0 +1,40 @@
+# Parallelization
+Partition :	4 4 1
+
+Shock generator: true
+
+# Mesh definition
+Lx :	0.111  
+nx :	768    # 3072 
+Ly :	0.074 
+ny :	512    # 2048  
+
+# Flow setup
+Cylinder diameter :   0.022
+Cylinder location :   0.04
+Shock location :      0.028
+Mach number of shock :   2.4
+Pre-shock density :   1.17
+Pre-shock pressure :  1.01e5
+
+# Fluid properties
+Liquid density :              1000
+Liquid dynamic viscosity :    0
+Gas dynamic viscosity :       0
+Liquid viscosity :    9e-4
+Gas viscosity :       1.81e-5
+Liquid thermal conductivity : 0
+Gas thermal conductivity :    0
+Liquid gamma :	      	      6.12
+Liquid Pinf :		          3.43e8
+Gas gamma : 		          1.4
+
+# Time integration
+Max timestep size : 1.8e-8
+Max cfl number :    0.15
+Max time :     	    1.02e-4
+# To look at breakup, use tmax = 2.9e-3
+Max steps :	    100000
+
+# Ensight output
+Ensight output period : 1e-6
