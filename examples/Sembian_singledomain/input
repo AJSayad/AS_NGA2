@@ -19,8 +19,6 @@ Pre-shock pressure :  1.01e5
 
 # Fluid properties
 Liquid density :              1000
-Liquid dynamic viscosity :    0
-Gas dynamic viscosity :       0
 Liquid viscosity :    9e-4
 Gas viscosity :       1.81e-5
 Liquid thermal conductivity : 0
