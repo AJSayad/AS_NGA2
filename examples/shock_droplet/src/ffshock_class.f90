@@ -48,7 +48,7 @@ module ffshock_class
       real(WP), dimension(:,:,:)    , allocatable :: stressx,stressy,stressz,stressI
       real(WP), dimension(:,:,:,:)  , allocatable :: srcQ
       
-      !> Constant phasic kinematic viscosity
+      !> Constant phasic dynamic viscosity
       real(WP) :: cst_visc
 
       !> dynamic viscosity
@@ -495,9 +495,9 @@ contains
       ! get physical viscosity
       call this%fs%get_visc(mu=this%dynvisc,visc_cst=this%cst_visc)
       ! Get LAD
-      call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta              )
+      call this%fs%get_viscartif(dt=this%time%dt,beta=this%beta); this%fs%BETA=this%fs%Q(:,:,:,1)*(this%beta)
       ! Get eddy viscosity
-      call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc+this%cst_visc)
+      call this%fs%get_vreman   (dt=this%time%dt,visc=this%visc); this%fs%VISC=this%fs%Q(:,:,:,1)*(this%visc)
       ! Try adding BETA to visc
       this%fs%VISC=this%fs%VISC+Cb2v*this%fs%BETA+this%dynvisc ! beta and LES kinematic viscosities are already multiplied by density (see above)
    end subroutine prepare_viscosities
