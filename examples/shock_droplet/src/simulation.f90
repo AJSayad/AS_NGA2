@@ -272,7 +272,6 @@ contains
    !> sutherland model for viscosity
    subroutine sutherland_air(mu,visc_cst,T)
       implicit none
-      integer :: i,j,k
       real(WP), intent(inout) :: mu    ! viscosity array
       real(WP), intent(in)    :: T     ! temperature array
       real(WP) :: T0=273.15_WP         ! [K] reference temperature https://www.cfd-online.com/Wiki/Sutherland%27s_law 
