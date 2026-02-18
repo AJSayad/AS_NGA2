@@ -375,29 +375,29 @@ contains
          A = 2*GammaG*GP2 + (GammaG-1)
          B = 4*GammaG*GP2 + (GammaG+1)
          C = 2*GammaG*GP2
-         Grho1 = (B - sqrt(B**2 - 4*A*C))/(2*A)                 ! pre-shock gas density
-         GP1 = GP2 - Grho1/(1-Grho1)                            ! pre-shock gas pressure
-         LP1 = GP1                                              ! we initialize the liquid in pre-shock region
-         u1 = 1/(1-Grho1)                                       ! pre-shock gas velocity (shock fixed frame)
-         u2 = u1 - 1                                            ! post-shock gas velocity (shock fixed frame)
-         delta_u = u1 - u2                                      ! velocity jump across the shock (should be = 1 by normalization)
-         c1 = sqrt(GammaG*GP1/Grho1)                            ! pre-shock speed of sound (shock fixed frame)
-         M1 = u1/c1                                             ! pre-shock Mach number (shock fixed frame)
-         Ms = M1                                                ! shock Mach number
-         Lrho1 = rho_ratio*Grho1                                ! pre-shock liquid density
-         PinfL = GP1*(rho_ratio*(GammaG/GammaL)*c_ratio**2 - 1) ! SG-EOS stiffness pressure
+         Grho1 = (B - sqrt(B**2 - 4*A*C))/(2*A)                    ! pre-shock gas density --> Quadratic for rhoG1: A*rhoG1^2 - B*rhoG1 + C = 0
+         GP1 = GP2 - Grho1/(1-Grho1)                               ! pre-shock gas pressure
+         LP1 = GP1                                                 ! we initialize the liquid in pre-shock region
+         u1 = 1/(1-Grho1)                                          ! pre-shock gas velocity (shock fixed frame)
+         u2 = u1 - 1                                               ! post-shock gas velocity (shock fixed frame)
+         delta_u = u1 - u2                                         ! velocity jump across the shock (should be = 1 by normalization)
+         c1 = sqrt(GammaG*GP1/Grho1)                               ! pre-shock speed of sound (shock fixed frame)
+         M1 = u1/c1                                                ! pre-shock Mach number (shock fixed frame)
+         Ms = M1                                                   ! shock Mach number
+         Lrho1 = rho_ratio*Grho1                                   ! pre-shock liquid density
+         PinfL = GP1*(rho_ratio*(GammaG/GammaL)*c_ratio**2 - 1)    ! SG-EOS stiffness pressure
          if (Re.gt.0.0_WP)then
-            muG = 1/Re                                          ! gas dynamic viscosity 
+            muG = 1/Re                                             ! gas dynamic viscosity 
          else
-            muG = 0.0_WP                                        ! gas dynamic viscosity
+            muG = 0.0_WP                                           ! gas dynamic viscosity
          end if
-         muL = mu_ratio*muG                                     ! liquid dynamic viscosity
-         ! sigma = 1/We                                         ! surface tension coefficient (not yet implemented)
-         CvL=(LP1+PinfL)/(Lrho1*1.0_WP*(GammaL-1.0_WP))         ! Calculate specific heats to enforce T = 1 normalization
-         CvG=(GP1+PinfG)/(Grho1*1.0_WP*(GammaG-1.0_WP))         ! here we assume T (in denominator) is 1.0
-         cL = c_ratio*c1                                        ! liquid sound speed
-         c2 = sqrt(GammaG*GP2/Grho2)                            ! post-shock speed of sound
-         tc = (ddrop/delta_u)*sqrt(Lrho1/Grho2)                 ! characteristic time scale
+         muL = mu_ratio*muG                                        ! liquid dynamic viscosity
+         ! sigma = 1/We                                            ! surface tension coefficient (not yet implemented)
+         CvG=(GP2+PinfG)/(Grho2*1.0_WP*(GammaG-1.0_WP))            ! here we have T2 (in denominator) is 1.0 from normalization
+         CvL=(LP1+PinfL)/(Lrho1*get_TG(Grho1,GP1)*(GammaL-1.0_WP)) ! Calculate specific heat for liquid (using get_TG(Grho1,GP1) to force pressure and thermal equillibrium)
+         cL = c_ratio*c1                                           ! liquid sound speed
+         c2 = sqrt(GammaG*GP2/Grho2)                               ! post-shock speed of sound
+         tc = (ddrop/delta_u)*sqrt(Lrho1/Grho2)                    ! characteristic time scale
 
          ! Write problem setup to log file
          write(message,'("[AIAAWG] ===== Problem Setup Description =====")')                 ; call log(message)
