@@ -408,6 +408,7 @@ contains
          write(message,'("[AIAAWG] +++++++ Pre-shock Conditions ++++++++")')                 ; call log(message)
          write(message,'("[AIAAWG] Pressure                    = ",es12.5)')            GP1  ; call log(message)
          write(message,'("[AIAAWG] Density                     = ",es12.5)')            Grho1; call log(message)
+         write(message,'("[AIAAWG] Liquid density              = ",es12.5)')            Lrho1; call log(message)
          write(message,'("[AIAAWG] Velocity (shock frame)      = ",es12.5)')            u1   ; call log(message)
          write(message,'("[AIAAWG] Ambient sound speed         = ",es12.5)')            c1   ; call log(message)
          write(message,'("[AIAAWG] Liquid sound speed          = ",es12.5)')            cL   ; call log(message)
