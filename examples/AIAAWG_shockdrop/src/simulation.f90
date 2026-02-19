@@ -923,7 +923,7 @@ contains
       implicit none
       integer :: i,j,k
       
-      ! Apply UNclipped Neumann on primitive variables in x+
+      ! Apply clipped Neumann on primitive variables in x+
       if (.not.fs%cfg%xper.and.fs%cfg%iproc.eq.fs%cfg%npx) then
          do k=fs%cfg%kmino_,fs%cfg%kmaxo_; do j=fs%cfg%jmino_,fs%cfg%jmaxo_
             ! Copy over from imax to imax+1 and above
@@ -935,8 +935,8 @@ contains
                fs%RHOG(i,j,k)=fs%RHOG(fs%cfg%imax,j,k)
                fs%PG  (i,j,k)=fs%PG  (fs%cfg%imax,j,k)
                fs%IG  (i,j,k)=fs%IG  (fs%cfg%imax,j,k)
-               !fs%U  (i,j,k)=max(fs%U(fs%cfg%imax,j,k),0.0_WP)
-               fs%U   (i,j,k)=fs%U   (fs%cfg%imax,j,k)
+               fs%U  (i,j,k)=max(fs%U(fs%cfg%imax,j,k),0.0_WP) ! AS applied clipped Neumann to prevent inflow at x+ boundary
+               !fs%U   (i,j,k)=fs%U   (fs%cfg%imax,j,k)
                fs%V   (i,j,k)=fs%V   (fs%cfg%imax,j,k)
                fs%W   (i,j,k)=fs%W   (fs%cfg%imax,j,k)
                fs%VF  (i,j,k)=fs%VF  (fs%cfg%imax,j,k)
@@ -1050,7 +1050,7 @@ contains
          end do; end do
       end if
       
-      ! Apply UNclipped Neumann on primitive variables in z-
+      ! Apply clipped Neumann on primitive variables in z-
       if (.not.fs%cfg%zper.and.fs%cfg%kproc.eq.1) then
          do j=fs%cfg%jmino_,fs%cfg%jmaxo_; do i=fs%cfg%imino_,fs%cfg%imaxo_
             ! First copy over W from kmin+1 to kmin
