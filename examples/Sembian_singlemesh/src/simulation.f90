@@ -900,8 +900,8 @@ contains
                fs%RHOG(i,j,k)=fs%RHOG(fs%cfg%imax,j,k)
                fs%PG  (i,j,k)=fs%PG  (fs%cfg%imax,j,k)
                fs%IG  (i,j,k)=fs%IG  (fs%cfg%imax,j,k)
-               !fs%U  (i,j,k)=max(fs%U(fs%cfg%imax,j,k),0.0_WP)
-               fs%U   (i,j,k)=fs%U   (fs%cfg%imax,j,k)
+               fs%U  (i,j,k)=max(fs%U(fs%cfg%imax,j,k),0.0_WP) ! AS apply clipped Neumann for velocity in x+ to prevent inflow 
+               ! fs%U   (i,j,k)=fs%U   (fs%cfg%imax,j,k)
                fs%V   (i,j,k)=fs%V   (fs%cfg%imax,j,k)
                fs%W   (i,j,k)=fs%W   (fs%cfg%imax,j,k)
                fs%VF  (i,j,k)=fs%VF  (fs%cfg%imax,j,k)
