@@ -888,7 +888,7 @@ contains
       implicit none
       integer :: i,j,k
       
-      ! Apply UNclipped Neumann on primitive variables in x+
+      ! Apply clipped Neumann on primitive variables in x+
       if (.not.fs%cfg%xper.and.fs%cfg%iproc.eq.fs%cfg%npx) then
          do k=fs%cfg%kmino_,fs%cfg%kmaxo_; do j=fs%cfg%jmino_,fs%cfg%jmaxo_
             ! Copy over from imax to imax+1 and above
